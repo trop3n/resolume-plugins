@@ -1,0 +1,96 @@
+# resolume-rusci
+
+**Rusci Scope**, an FFGL 2.1 **source** plugin for Resolume. It shows up in
+Resolume's Sources list and generates oscilloscope-style vector graphics
+(Gaussian beam, phosphor persistence, glow) using the engine from
+[rusci-render](https://github.com/trop3n/rusci-render), a Rust port of
+[osci-render](https://github.com/jameshball/osci-render).
+
+Windows x64 only for now. Needs Resolume 7.0.3 or later (FFGL 2.1).
+
+## Install
+
+```powershell
+powershell -ExecutionPolicy Bypass -File install.ps1
+```
+
+This builds `target\release\rusci_scope.dll` and copies it to
+`Documents\Resolume Arena\Extra Effects\RusciScope.dll`. Restart Resolume,
+then drag **Rusci Scope** from Sources onto a clip slot.
+
+## Parameters
+
+| Group  | Parameter   | Notes                                        |
+|--------|-------------|----------------------------------------------|
+| Shape  | Shape       | Circle, Square, Triangle, Star, Lissajous    |
+| Shape  | Size        | 0.05 – 1.0 of the frame height               |
+| Shape  | Spin        | -1 – 1 turns per second (centre = still)     |
+| Beam   | Focus       | Beam width (lower = sharper)                 |
+| Beam   | Intensity   | Beam brightness                              |
+| Beam   | Persistence | Phosphor trail length                        |
+| Beam   | Glow        | Tight bloom                                  |
+| Beam   | Scatter     | Wide bloom                                   |
+| Beam   | Exposure    | Tone-mapping exposure                        |
+| Colour | Colour      | Beam colour (Resolume shows a colour picker) |
+
+All sliders can be mapped to MIDI, BPM or audio in Resolume as usual. The
+scope is drawn in a centred square; the sides are transparent.
+
+## Test without Resolume
+
+```powershell
+cargo test
+cargo build --release
+cargo run --release --example ffgl_host
+```
+
+`ffgl_host` loads the DLL, creates an OpenGL 4.1 core context (what
+Resolume provides), makes the same calls Resolume does, checks after every
+call that the plugin left GL in the state the FFGL SDK requires, and writes
+one PNG per shape to `target\ffgl-host\`. It exits non-zero on any failure.
+
+Unit tests cover the ABI struct layouts, parameter mapping, `plugMain`
+dispatch and shape sampling. They also run on Linux.
+
+## rusci-render dependency
+
+`osci-core`, `osci-synth` and `osci-visualizer` come from rusci-render,
+pinned to a commit in `Cargo.toml`. To update, change the `rev` on all
+three lines.
+
+To develop against a local rusci-render checkout instead, create
+`.cargo/config.toml` (git-ignored):
+
+```toml
+[patch."https://github.com/trop3n/rusci-render"]
+osci-core = { path = "C:/path/to/rusci-render/crates/osci-core" }
+osci-synth = { path = "C:/path/to/rusci-render/crates/osci-synth" }
+osci-visualizer = { path = "C:/path/to/rusci-render/crates/osci-visualizer" }
+```
+
+The pinned `rev` must still exist on GitHub; Cargo fetches it before
+applying the patch.
+
+## Layout
+
+| File                    | What it does                                           |
+|-------------------------|--------------------------------------------------------|
+| `src/ffi.rs`            | FFGL constants and structs, from Resolume's `FFGL.h`    |
+| `src/lib.rs`            | `plugMain` entry point and dispatch                    |
+| `src/params.rs`         | Parameter table and slider → real-value mapping        |
+| `src/scene.rs`          | Shapes → X/Y samples via `osci_synth::ShapeRenderer`    |
+| `src/instance.rs`       | Per-clip state; drives `osci_visualizer::OsciRenderer`  |
+| `src/gl_loader.rs`      | Loads GL functions from the host's context             |
+| `examples/ffgl_host.rs` | Stand-in host for testing                              |
+
+The FFGL interface is written directly in Rust (no C++ SDK, no bindgen).
+
+## Next steps
+
+- File parameter (`FF_TYPE_FILE`) to load SVG/OBJ/text through `osci-parsers`.
+- Effects chain from `osci-effects`.
+- Lua scripts with sliders mapped to FFGL parameters.
+
+## License
+
+GPL-3.0, like rusci-render and osci-render. See [LICENSE](LICENSE).
