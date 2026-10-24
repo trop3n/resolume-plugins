@@ -30,7 +30,7 @@ mod windows_host {
     use std::path::PathBuf;
 
     use glow::HasContext;
-    use windows_sys::Win32::Graphics::Gdi::GetDC;
+    use windows_sys::Win32::Graphics::Gdi::{GetDC, HDC};
     use windows_sys::Win32::Graphics::OpenGL::*;
     use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
     use windows_sys::Win32::UI::WindowsAndMessaging::*;
@@ -103,7 +103,6 @@ mod windows_host {
     type PlugMain = unsafe extern "system" fn(u32, FFMixed, *mut c_void) -> FFMixed;
     type SetLogCallback = unsafe extern "system" fn(Option<unsafe extern "system" fn(*mut c_char)>);
     type CreateContextAttribs = unsafe extern "system" fn(HDC, HGLRC, *const i32) -> HGLRC;
-    type HDC = *mut c_void;
 
     unsafe extern "system" fn print_log(msg: *mut c_char) {
         println!("  plugin log: {}", CStr::from_ptr(msg).to_string_lossy());
