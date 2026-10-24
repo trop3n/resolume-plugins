@@ -1,7 +1,7 @@
 //! Turns the selected shape into one frame of X/Y beam samples.
 //!
 //! Shapes are traced with `osci_synth::ShapeRenderer`, the same walker the
-//! synth uses for audio, so files/effects can be plugged in here later.
+//! synth uses for audio.
 
 use std::f32::consts::{PI, TAU};
 
@@ -10,8 +10,9 @@ use osci_synth::ShapeRenderer;
 
 use crate::params::{self, ParamValues};
 
-/// Samples per video frame. `OsciRenderer` draws at most 2048 segments.
-pub const SAMPLES_PER_FRAME: usize = 1024;
+/// Samples per video frame. Plus the closing sample, this is 2048 segments,
+/// the most `OsciRenderer` draws; detailed SVGs need all of them.
+pub const SAMPLES_PER_FRAME: usize = 2048;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ShapeKind {
@@ -20,6 +21,8 @@ pub enum ShapeKind {
     Triangle,
     Star,
     Lissajous,
+    /// Shapes loaded from the SVG File parameter.
+    File,
 }
 
 impl ShapeKind {
@@ -29,18 +32,20 @@ impl ShapeKind {
             1 => Self::Square,
             2 => Self::Triangle,
             3 => Self::Star,
-            _ => Self::Lissajous,
+            4 => Self::Lissajous,
+            _ => Self::File,
         }
     }
 
-    /// Unit-size outline in -1..1, or `None` for shapes generated per sample.
+    /// Unit-size outline in -1..1, or `None` for Lissajous (generated per
+    /// sample) and File (shapes come from the scene).
     fn shapes(self) -> Option<Vec<Box<dyn Shape>>> {
         Some(match self {
             Self::Circle => vec![Box::new(CircleArc::new(0.0, 0.0, 1.0, 1.0, 0.0, TAU))],
             Self::Square => polygon(&[(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)]),
             Self::Triangle => polygon(&regular(3, |_| 1.0)),
             Self::Star => polygon(&regular(10, |i| if i % 2 == 0 { 1.0 } else { 0.4 })),
-            Self::Lissajous => return None,
+            Self::Lissajous | Self::File => return None,
         })
     }
 }
@@ -68,6 +73,8 @@ fn regular(n: usize, radius: impl Fn(usize) -> f32) -> Vec<(f32, f32)> {
 
 pub struct Scene {
     renderer: ShapeRenderer,
+    /// Shapes from the SVG file, already fitted to -1..1. Empty if none.
+    file_shapes: Vec<Box<dyn Shape>>,
     xs: Vec<f32>,
     ys: Vec<f32>,
 }
@@ -84,19 +91,39 @@ impl Scene {
         let rate = 48_000.0;
         Self {
             renderer: ShapeRenderer::new(rate, rate / SAMPLES_PER_FRAME as f64),
+            file_shapes: Vec::new(),
             xs: Vec::with_capacity(SAMPLES_PER_FRAME + 1),
             ys: Vec::with_capacity(SAMPLES_PER_FRAME + 1),
         }
     }
 
+    /// Replace the shapes drawn for `ShapeKind::File` (empty to clear).
+    pub fn set_file_shapes(&mut self, shapes: Vec<Box<dyn Shape>>) {
+        self.file_shapes = shapes;
+    }
+
+    pub fn has_file_shapes(&self) -> bool {
+        !self.file_shapes.is_empty()
+    }
+
     /// Build this frame's samples. `time` is host time in seconds.
+    /// Returns empty slices when there is nothing to draw.
     pub fn update(&mut self, params: &ParamValues, time: f64) -> (&[f32], &[f32]) {
         let kind = params.shape();
+        self.xs.clear();
+        self.ys.clear();
+
         // Restart the walker every video frame so each frame is exactly one
-        // trip round the shape, starting at the same point. Rebuilding a few
-        // shapes per frame is cheap.
-        if let Some(shapes) = kind.shapes() {
-            self.renderer.set_shapes(shapes);
+        // trip round the shape, starting at the same point. Cloning shapes
+        // once per frame (not per sample) is cheap.
+        match kind {
+            ShapeKind::Lissajous => {}
+            ShapeKind::File if self.file_shapes.is_empty() => return (&self.xs, &self.ys),
+            ShapeKind::File => {
+                let shapes = self.file_shapes.iter().map(|s| s.clone_shape()).collect();
+                self.renderer.set_shapes(shapes);
+            }
+            _ => self.renderer.set_shapes(kind.shapes().unwrap_or_default()),
         }
 
         let size = params.get(params::SIZE);
@@ -104,8 +131,6 @@ impl Scene {
         let angle = ((params.get(params::SPIN) as f64 * time).fract() * std::f64::consts::TAU) as f32;
         let (sin, cos) = angle.sin_cos();
 
-        self.xs.clear();
-        self.ys.clear();
         for i in 0..SAMPLES_PER_FRAME {
             let p = match kind {
                 ShapeKind::Lissajous => {
@@ -136,9 +161,17 @@ mod tests {
         p
     }
 
+    const FILE: usize = 5;
+
+    /// A diagonal line from (-1,-1) to (1,1), standing in for parsed SVG shapes.
+    fn diagonal() -> Vec<Box<dyn Shape>> {
+        vec![Box::new(Line::new_2d(-1.0, -1.0, 1.0, 1.0))]
+    }
+
     #[test]
     fn every_shape_fills_a_frame_in_bounds() {
         let mut scene = Scene::new();
+        scene.set_file_shapes(diagonal());
         for kind in 0..params::SHAPE_NAMES.len() {
             let (xs, ys) = scene.update(&params_for(kind), 0.0);
             assert_eq!(xs.len(), SAMPLES_PER_FRAME + 1);
@@ -148,6 +181,35 @@ mod tests {
                 assert!(x.abs() <= 1.0 + 1e-4 && y.abs() <= 1.0 + 1e-4, "kind {kind}: ({x}, {y})");
             }
         }
+    }
+
+    #[test]
+    fn file_without_shapes_draws_nothing() {
+        let mut scene = Scene::new();
+        let (xs, ys) = scene.update(&params_for(FILE), 0.0);
+        assert!(xs.is_empty() && ys.is_empty());
+        assert!(!scene.has_file_shapes());
+    }
+
+    #[test]
+    fn file_shapes_are_traced() {
+        let mut scene = Scene::new();
+        scene.set_file_shapes(diagonal());
+        let (xs, ys) = scene.update(&params_for(FILE), 0.0);
+        assert_eq!((xs[0], ys[0]), (-1.0, -1.0));
+        // Every sample lies on the line y = x.
+        assert!(xs.iter().zip(ys).all(|(x, y)| (x - y).abs() < 1e-4));
+        // Frames repeat while the file stays loaded (shapes are cloned, not consumed).
+        let first = xs.to_vec();
+        assert_eq!(scene.update(&params_for(FILE), 0.0).0, &first[..]);
+    }
+
+    #[test]
+    fn clearing_file_shapes_stops_drawing() {
+        let mut scene = Scene::new();
+        scene.set_file_shapes(diagonal());
+        scene.set_file_shapes(Vec::new());
+        assert!(scene.update(&params_for(FILE), 0.0).0.is_empty());
     }
 
     #[test]

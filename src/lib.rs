@@ -8,6 +8,7 @@ mod gl_loader;
 pub mod instance;
 pub mod params;
 pub mod scene;
+mod svg_loader;
 
 use std::ffi::{c_char, c_void, CStr, CString};
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -57,7 +58,7 @@ static SHORT_NAME: &CStr = c"RScope";
 static LOG_CALLBACK: AtomicUsize = AtomicUsize::new(0);
 
 /// Send a line to Resolume's log, if it gave us a callback.
-fn log(msg: &str) {
+pub(crate) fn log(msg: &str) {
     let f = LOG_CALLBACK.load(Ordering::Acquire);
     if f == 0 {
         return;
@@ -113,7 +114,12 @@ pub unsafe fn dispatch(code: u32, input: FFMixed, instance: *mut Instance) -> FF
             Some(p) => FFMixed::ptr(p.name.as_ptr()),
             None => FFMixed::ptr(std::ptr::null::<c_char>()),
         },
-        FF_GET_PARAMETER_DEFAULT => PARAMS.get(index()).map_or(FFMixed::fail(), |p| FFMixed::float(p.host_default())),
+        FF_GET_PARAMETER_DEFAULT => match PARAMS.get(index()) {
+            // File params default to "no file"; the host reads a string.
+            Some(p) if p.is_file() => FFMixed::ptr(c"".as_ptr()),
+            Some(p) => FFMixed::float(p.host_default()),
+            None => FFMixed::fail(),
+        },
         FF_GET_PARAMETER_TYPE => PARAMS.get(index()).map_or(FFMixed::fail(), |p| FFMixed::uint(p.ffgl_type())),
         FF_GET_PARAMETER_USAGE => FFMixed::uint(FF_USAGE_STANDARD),
         FF_GET_PRAMETER_VISIBILITY => FFMixed::uint(FF_TRUE),
@@ -136,10 +142,20 @@ pub unsafe fn dispatch(code: u32, input: FFMixed, instance: *mut Instance) -> FF
                 _ => FFMixed::fail(),
             }
         }
-        FF_GET_NUM_ELEMENT_SEPARATORS | FF_GET_NUM_FILE_PARAMETER_EXTENSIONS => FFMixed::uint(0),
+        FF_GET_NUM_ELEMENT_SEPARATORS => FFMixed::uint(0),
+        FF_GET_NUM_FILE_PARAMETER_EXTENSIONS => {
+            FFMixed::uint(PARAMS.get(index()).map_or(0, |p| p.extensions().len() as u32))
+        }
+        FF_GET_FILE_PARAMETER_EXTENSION => {
+            let args = &*(input.as_ptr() as *const GetFileParameterExtensionStruct);
+            match PARAMS.get(args.ParameterNumber as usize).and_then(|p| p.extensions().get(args.ExtensionNumber as usize)) {
+                Some(ext) => FFMixed::ptr(ext.as_ptr()),
+                None => FFMixed::ptr(std::ptr::null::<c_char>()),
+            }
+        }
         FF_GET_RANGE => {
             let args = &mut *(input.as_ptr() as *mut GetRangeStruct);
-            let Some(p) = PARAMS.get(args.parameterNumber as usize) else {
+            let Some(p) = PARAMS.get(args.parameterNumber as usize).filter(|p| !p.is_file()) else {
                 return FFMixed::fail();
             };
             let max = match p.kind {
@@ -185,21 +201,37 @@ pub unsafe fn dispatch(code: u32, input: FFMixed, instance: *mut Instance) -> FF
         FF_SET_PARAMETER => match inst {
             Some(i) => {
                 let args = &*(input.as_ptr() as *const SetParameterStruct);
-                let value = f32::from_bits(args.NewParameterValue.as_u32());
-                ok(i.params.set_host(args.ParameterNumber as usize, value))
+                let index = args.ParameterNumber as usize;
+                if PARAMS.get(index).is_some_and(|p| p.is_file()) {
+                    // File params carry a C string path (null = cleared).
+                    let path = args.NewParameterValue.as_ptr() as *const c_char;
+                    i.set_file((!path.is_null()).then(|| CStr::from_ptr(path)));
+                    ok(true)
+                } else {
+                    let value = f32::from_bits(args.NewParameterValue.as_u32());
+                    ok(i.params.set_host(index, value))
+                }
             }
             None => FFMixed::fail(),
         },
-        FF_GET_PARAMETER => {
-            inst.and_then(|i| i.params.get_host(index())).map_or(FFMixed::fail(), FFMixed::float)
+        FF_GET_PARAMETER => match inst {
+            Some(i) if is_file_param(index()) => FFMixed::ptr(i.file_path().as_ptr()),
+            Some(i) => i.params.get_host(index()).map_or(FFMixed::fail(), FFMixed::float),
+            None => FFMixed::fail(),
+        },
+        FF_GET_PARAMETER_DISPLAY => {
+            let Some(i) = inst else {
+                return FFMixed::fail();
+            };
+            let text = if is_file_param(index()) { Some(i.file_display()) } else { i.params.display(index()) };
+            match text {
+                Some(text) => {
+                    i.display = CString::new(text).unwrap_or_default();
+                    FFMixed::ptr(i.display.as_ptr())
+                }
+                None => FFMixed::fail(),
+            }
         }
-        FF_GET_PARAMETER_DISPLAY => match inst.and_then(|i| Some((i.params.display(index())?, i))) {
-            Some((text, i)) => {
-                i.display = CString::new(text).unwrap_or_default();
-                FFMixed::ptr(i.display.as_ptr())
-            }
-            None => FFMixed::fail(),
-        },
         FF_GET_PARAMETER_EVENTS => match (inst, (input.as_ptr() as *mut GetParamEventsStruct).as_mut()) {
             (Some(_), Some(events)) => {
                 events.numEvents = 0;
@@ -230,6 +262,10 @@ pub unsafe fn dispatch(code: u32, input: FFMixed, instance: *mut Instance) -> FF
         FF_GET_INPUT_STATUS | FF_SET_PARAMETER_ELEMENT_VALUE => FFMixed::fail(),
         _ => FFMixed::fail(),
     }
+}
+
+fn is_file_param(index: usize) -> bool {
+    PARAMS.get(index).is_some_and(|p| p.is_file())
 }
 
 unsafe fn instantiate(viewport: FFGLViewportStruct) -> FFMixed {
@@ -297,7 +333,7 @@ mod tests {
     #[test]
     fn parameter_metadata() {
         let null = std::ptr::null_mut();
-        assert_eq!(call(FF_GET_NUM_PARAMETERS, FFMixed::uint(0), null).as_u32(), 12);
+        assert_eq!(call(FF_GET_NUM_PARAMETERS, FFMixed::uint(0), null).as_u32(), 13);
         assert_eq!(cstr(call(FF_GET_PARAMETER_NAME, FFMixed::uint(0), null)), "Shape");
         assert_eq!(call(FF_GET_PARAMETER_TYPE, FFMixed::uint(0), null).as_u32(), FF_TYPE_OPTION);
         assert_eq!(call(FF_GET_PARAMETER_TYPE, FFMixed::uint(1), null).as_u32(), FF_TYPE_STANDARD);
@@ -311,7 +347,7 @@ mod tests {
     #[test]
     fn option_elements() {
         let null = std::ptr::null_mut();
-        assert_eq!(call(FF_GET_NUM_PARAMETER_ELEMENTS, FFMixed::uint(0), null).as_u32(), 5);
+        assert_eq!(call(FF_GET_NUM_PARAMETER_ELEMENTS, FFMixed::uint(0), null).as_u32(), 6);
         let args = GetParameterElementNameStruct { ParameterNumber: 0, ElementNumber: 3 };
         assert_eq!(cstr(call(FF_GET_PARAMETER_ELEMENT_NAME, FFMixed::ptr(&args), null)), "Star");
         let args = GetParameterElementValueStruct { ParameterNumber: 0, ElementNumber: 3 };
@@ -335,7 +371,7 @@ mod tests {
     fn range_for_option_covers_elements() {
         let mut args = GetRangeStruct { parameterNumber: 0, range: RangeStruct { min: -1.0, max: -1.0 } };
         call(FF_GET_RANGE, FFMixed::ptr_mut(&mut args), std::ptr::null_mut());
-        assert_eq!((args.range.min, args.range.max), (0.0, 4.0));
+        assert_eq!((args.range.min, args.range.max), (0.0, 5.0));
     }
 
     #[test]
@@ -349,6 +385,41 @@ mod tests {
         let set = SetParameterStruct { ParameterNumber: params::FOCUS as u32, NewParameterValue: FFMixed::float(1.0) };
         call(FF_SET_PARAMETER, FFMixed::ptr(&set), inst);
         assert_eq!(cstr(call(FF_GET_PARAMETER_DISPLAY, FFMixed::uint(params::FOCUS as u32), inst)), "0.0200");
+        free(inst);
+    }
+
+    const FILE_PARAM: u32 = params::SVG_FILE as u32;
+
+    #[test]
+    fn file_param_metadata() {
+        let null = std::ptr::null_mut();
+        assert_eq!(cstr(call(FF_GET_PARAMETER_NAME, FFMixed::uint(FILE_PARAM), null)), "SVG File");
+        assert_eq!(call(FF_GET_PARAMETER_TYPE, FFMixed::uint(FILE_PARAM), null).as_u32(), FF_TYPE_FILE);
+        assert_eq!(cstr(call(FF_GET_PARAMETER_DEFAULT, FFMixed::uint(FILE_PARAM), null)), "");
+        assert_eq!(call(FF_GET_NUM_FILE_PARAMETER_EXTENSIONS, FFMixed::uint(FILE_PARAM), null).as_u32(), 1);
+        assert_eq!(call(FF_GET_NUM_FILE_PARAMETER_EXTENSIONS, FFMixed::uint(0), null).as_u32(), 0);
+        let args = GetFileParameterExtensionStruct { ParameterNumber: FILE_PARAM, ExtensionNumber: 0 };
+        assert_eq!(cstr(call(FF_GET_FILE_PARAMETER_EXTENSION, FFMixed::ptr(&args), null)), "svg");
+        let args = GetFileParameterExtensionStruct { ParameterNumber: FILE_PARAM, ExtensionNumber: 1 };
+        assert!(call(FF_GET_FILE_PARAMETER_EXTENSION, FFMixed::ptr(&args), null).as_ptr().is_null());
+        let mut range = GetRangeStruct { parameterNumber: FILE_PARAM, range: RangeStruct { min: 0.0, max: 0.0 } };
+        assert_eq!(call(FF_GET_RANGE, FFMixed::ptr_mut(&mut range), null).as_u32(), FF_FAIL);
+    }
+
+    #[test]
+    fn file_param_set_get_display() {
+        let inst = new_instance();
+        let path = c"C:/shows/logo.svg";
+        let set = SetParameterStruct { ParameterNumber: FILE_PARAM, NewParameterValue: FFMixed::ptr(path.as_ptr()) };
+        assert_eq!(call(FF_SET_PARAMETER, FFMixed::ptr(&set), inst).as_u32(), FF_SUCCESS);
+        assert_eq!(cstr(call(FF_GET_PARAMETER, FFMixed::uint(FILE_PARAM), inst)), "C:/shows/logo.svg");
+        assert_eq!(cstr(call(FF_GET_PARAMETER_DISPLAY, FFMixed::uint(FILE_PARAM), inst)), "logo.svg");
+
+        // A null pointer clears the file.
+        let set = SetParameterStruct { ParameterNumber: FILE_PARAM, NewParameterValue: FFMixed::ptr(std::ptr::null::<c_char>()) };
+        assert_eq!(call(FF_SET_PARAMETER, FFMixed::ptr(&set), inst).as_u32(), FF_SUCCESS);
+        assert_eq!(cstr(call(FF_GET_PARAMETER, FFMixed::uint(FILE_PARAM), inst)), "");
+        assert_eq!(cstr(call(FF_GET_PARAMETER_DISPLAY, FFMixed::uint(FILE_PARAM), inst)), "(none)");
         free(inst);
     }
 

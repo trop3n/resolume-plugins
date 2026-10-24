@@ -74,6 +74,7 @@ pub const FF_TYPE_GREEN: u32 = 3;
 pub const FF_TYPE_BLUE: u32 = 4;
 pub const FF_TYPE_STANDARD: u32 = 10;
 pub const FF_TYPE_OPTION: u32 = 11;
+pub const FF_TYPE_FILE: u32 = 14;
 pub const FF_INPUT_NOTINUSE: u32 = 0;
 pub const FF_USAGE_STANDARD: u32 = 0;
 
@@ -219,6 +220,12 @@ pub struct GetParameterElementValueStruct {
 }
 
 #[repr(C)]
+pub struct GetFileParameterExtensionStruct {
+    pub ParameterNumber: u32,
+    pub ExtensionNumber: u32,
+}
+
+#[repr(C)]
 pub struct ParamEventStruct {
     pub ParameterNumber: u32,
     pub eventFlags: u64,
@@ -252,6 +259,7 @@ mod layout {
         assert_eq!(size_of::<FFGLViewportStruct>(), 16);
         assert_eq!(size_of::<FFGLTextureStruct>(), 20);
         assert_eq!(size_of::<ProcessOpenGLStruct>(), 24);
+        assert_eq!(size_of::<GetFileParameterExtensionStruct>(), 8);
         assert_eq!(size_of::<ParamEventStruct>(), 16);
         assert_eq!(size_of::<GetParamEventsStruct>(), 16);
         assert_eq!(align_of::<SetParameterStruct>(), 8);

@@ -22,7 +22,8 @@ then drag **Rusci Scope** from Sources onto a clip slot.
 
 | Group  | Parameter   | Notes                                        |
 |--------|-------------|----------------------------------------------|
-| Shape  | Shape       | Circle, Square, Triangle, Star, Lissajous    |
+| Shape  | Shape       | Circle, Square, Triangle, Star, Lissajous, SVG File |
+| Shape  | SVG File    | SVG drawn when Shape is "SVG File"           |
 | Shape  | Size        | 0.05 – 1.0 of the frame height               |
 | Shape  | Spin        | -1 – 1 turns per second (centre = still)     |
 | Beam   | Focus       | Beam width (lower = sharper)                 |
@@ -36,6 +37,18 @@ then drag **Rusci Scope** from Sources onto a clip slot.
 All sliders can be mapped to MIDI, BPM or audio in Resolume as usual. The
 scope is drawn in a centred square; the sides are transparent.
 
+### SVG files
+
+Set **Shape** to "SVG File" and pick a file with **SVG File**. The drawing
+is centred and scaled to fit, keeping its proportions; fills are ignored,
+and every path is traced as an outline. Files load in the background, so a
+large SVG appears a moment later rather than stalling the output. Load
+errors (missing file, invalid SVG, no paths) go to Resolume's log, and
+nothing is drawn until a file loads.
+
+Each frame traces the whole drawing with 2048 points, so very detailed SVGs
+will look sparse or flicker; simpler line art works best.
+
 ## Test without Resolume
 
 ```powershell
@@ -47,16 +60,17 @@ cargo run --release --example ffgl_host
 `ffgl_host` loads the DLL, creates an OpenGL 4.1 core context (what
 Resolume provides), makes the same calls Resolume does, checks after every
 call that the plugin left GL in the state the FFGL SDK requires, and writes
-one PNG per shape to `target\ffgl-host\`. It exits non-zero on any failure.
+one PNG per shape to `target\ffgl-host\`, including `examples\arrow.svg`
+loaded through the SVG File parameter. It exits non-zero on any failure.
 
 Unit tests cover the ABI struct layouts, parameter mapping, `plugMain`
-dispatch and shape sampling. They also run on Linux.
+dispatch, shape sampling and SVG loading. They also run on Linux.
 
 ## rusci-render dependency
 
-`osci-core`, `osci-synth` and `osci-visualizer` come from rusci-render,
-pinned to a commit in `Cargo.toml`. To update, change the `rev` on all
-three lines.
+`osci-core`, `osci-synth`, `osci-parsers` and `osci-visualizer` come from
+rusci-render, pinned to a commit in `Cargo.toml`. To update, change the
+`rev` on all four lines.
 
 To develop against a local rusci-render checkout instead, create
 `.cargo/config.toml` (git-ignored):
@@ -65,6 +79,7 @@ To develop against a local rusci-render checkout instead, create
 [patch."https://github.com/trop3n/rusci-render"]
 osci-core = { path = "C:/path/to/rusci-render/crates/osci-core" }
 osci-synth = { path = "C:/path/to/rusci-render/crates/osci-synth" }
+osci-parsers = { path = "C:/path/to/rusci-render/crates/osci-parsers" }
 osci-visualizer = { path = "C:/path/to/rusci-render/crates/osci-visualizer" }
 ```
 
@@ -80,6 +95,7 @@ applying the patch.
 | `src/params.rs`         | Parameter table and slider → real-value mapping        |
 | `src/scene.rs`          | Shapes → X/Y samples via `osci_synth::ShapeRenderer`    |
 | `src/instance.rs`       | Per-clip state; drives `osci_visualizer::OsciRenderer`  |
+| `src/svg_loader.rs`     | Background SVG loading via `osci_parsers::svg`          |
 | `src/gl_loader.rs`      | Loads GL functions from the host's context             |
 | `examples/ffgl_host.rs` | Stand-in host for testing                              |
 
@@ -87,7 +103,7 @@ The FFGL interface is written directly in Rust (no C++ SDK, no bindgen).
 
 ## Next steps
 
-- File parameter (`FF_TYPE_FILE`) to load SVG/OBJ/text through `osci-parsers`.
+- More file types through `osci-parsers` (OBJ, text, GPLA).
 - Effects chain from `osci-effects`.
 - Lua scripts with sliders mapped to FFGL parameters.
 

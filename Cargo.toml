@@ -14,9 +14,10 @@ crate-type = ["cdylib", "rlib"]
 # Shared engine crates from rusci-render, pinned to a commit.
 # To develop against a local checkout instead, see README.md.
 [dependencies]
-osci-core = { git = "https://github.com/trop3n/rusci-render", rev = "be1c746960c75328ecfd30fcfee1e402bf030870" }
-osci-synth = { git = "https://github.com/trop3n/rusci-render", rev = "be1c746960c75328ecfd30fcfee1e402bf030870" }
-osci-visualizer = { git = "https://github.com/trop3n/rusci-render", rev = "be1c746960c75328ecfd30fcfee1e402bf030870" }
+osci-core = { git = "https://github.com/trop3n/rusci-render", rev = "a6f189cef2a104dc538c8142a2667acb8e97cc56" }
+osci-synth = { git = "https://github.com/trop3n/rusci-render", rev = "a6f189cef2a104dc538c8142a2667acb8e97cc56" }
+osci-parsers = { git = "https://github.com/trop3n/rusci-render", rev = "a6f189cef2a104dc538c8142a2667acb8e97cc56" }
+osci-visualizer = { git = "https://github.com/trop3n/rusci-render", rev = "a6f189cef2a104dc538c8142a2667acb8e97cc56" }
 # Must match the glow version osci-visualizer uses.
 glow = "0.16"
 

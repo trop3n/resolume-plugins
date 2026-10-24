@@ -18,6 +18,9 @@ pub enum Kind {
     Option { elements: &'static [&'static CStr] },
     /// One channel of a colour picker (Resolume groups R, G, B params).
     Colour { ffgl_type: u32 },
+    /// File picker. The path lives on the instance, not in `ParamValues`.
+    /// Extensions are without the dot.
+    File { extensions: &'static [&'static CStr] },
 }
 
 pub struct ParamSpec {
@@ -34,6 +37,7 @@ impl ParamSpec {
             Kind::Standard { .. } => ffi::FF_TYPE_STANDARD,
             Kind::Option { .. } => ffi::FF_TYPE_OPTION,
             Kind::Colour { ffgl_type } => ffgl_type,
+            Kind::File { .. } => ffi::FF_TYPE_FILE,
         }
     }
 
@@ -45,7 +49,7 @@ impl ParamSpec {
     pub fn to_host(&self, real: f32) -> f32 {
         match self.kind {
             Kind::Standard { min, max } => ((real - min) / (max - min)).clamp(0.0, 1.0),
-            Kind::Option { .. } | Kind::Colour { .. } => real,
+            Kind::Option { .. } | Kind::Colour { .. } | Kind::File { .. } => real,
         }
     }
 
@@ -54,6 +58,7 @@ impl ParamSpec {
             Kind::Standard { min, max } => min + host.clamp(0.0, 1.0) * (max - min),
             Kind::Option { elements } => host.round().clamp(0.0, (elements.len() - 1) as f32),
             Kind::Colour { .. } => host.clamp(0.0, 1.0),
+            Kind::File { .. } => 0.0,
         }
     }
 
@@ -62,6 +67,17 @@ impl ParamSpec {
             Kind::Option { elements } => elements,
             _ => &[],
         }
+    }
+
+    pub fn extensions(&self) -> &'static [&'static CStr] {
+        match self.kind {
+            Kind::File { extensions } => extensions,
+            _ => &[],
+        }
+    }
+
+    pub fn is_file(&self) -> bool {
+        matches!(self.kind, Kind::File { .. })
     }
 }
 
@@ -78,11 +94,12 @@ pub const EXPOSURE: usize = 8;
 pub const RED: usize = 9;
 pub const GREEN: usize = 10;
 pub const BLUE: usize = 11;
+pub const SVG_FILE: usize = 12;
 
-pub const SHAPE_NAMES: &[&CStr] = &[c"Circle", c"Square", c"Triangle", c"Star", c"Lissajous"];
+pub const SHAPE_NAMES: &[&CStr] = &[c"Circle", c"Square", c"Triangle", c"Star", c"Lissajous", c"SVG File"];
 
 /// Visualiser ranges/defaults follow `osci_visualizer::VisualiserSettings`.
-pub static PARAMS: [ParamSpec; 12] = [
+pub static PARAMS: [ParamSpec; 13] = [
     ParamSpec { name: c"Shape", group: "Shape", kind: Kind::Option { elements: SHAPE_NAMES }, default: 0.0 },
     ParamSpec { name: c"Size", group: "Shape", kind: Kind::Standard { min: 0.05, max: 1.0 }, default: 0.7 },
     ParamSpec { name: c"Spin", group: "Shape", kind: Kind::Standard { min: -1.0, max: 1.0 }, default: 0.0 },
@@ -95,6 +112,8 @@ pub static PARAMS: [ParamSpec; 12] = [
     ParamSpec { name: c"Colour", group: "Colour", kind: Kind::Colour { ffgl_type: ffi::FF_TYPE_RED }, default: 0.2 },
     ParamSpec { name: c"Green", group: "Colour", kind: Kind::Colour { ffgl_type: ffi::FF_TYPE_GREEN }, default: 1.0 },
     ParamSpec { name: c"Blue", group: "Colour", kind: Kind::Colour { ffgl_type: ffi::FF_TYPE_BLUE }, default: 0.3 },
+    // Drawn when Shape is "SVG File".
+    ParamSpec { name: c"SVG File", group: "Shape", kind: Kind::File { extensions: &[c"svg"] }, default: 0.0 },
 ];
 
 /// Current values of one plugin instance, in real units.
@@ -118,15 +137,16 @@ impl ParamValues {
         self.values[index]
     }
 
-    /// Value as the host sees it. `None` for an unknown index.
+    /// Value as the host sees it. `None` for an unknown index or the file param.
     pub fn get_host(&self, index: usize) -> Option<f32> {
-        Some(PARAMS.get(index)?.to_host(self.values[index]))
+        let spec = PARAMS.get(index).filter(|s| !s.is_file())?;
+        Some(spec.to_host(self.values[index]))
     }
 
-    /// Returns false for an unknown index or a non-finite value.
+    /// Returns false for an unknown index, the file param, or a non-finite value.
     pub fn set_host(&mut self, index: usize, host: f32) -> bool {
         match PARAMS.get(index) {
-            Some(spec) if host.is_finite() => {
+            Some(spec) if host.is_finite() && !spec.is_file() => {
                 self.values[index] = spec.from_host(host);
                 true
             }
@@ -134,9 +154,9 @@ impl ParamValues {
         }
     }
 
-    /// Text Resolume shows next to the slider.
+    /// Text Resolume shows next to the slider. `None` for the file param.
     pub fn display(&self, index: usize) -> Option<String> {
-        let spec = PARAMS.get(index)?;
+        let spec = PARAMS.get(index).filter(|s| !s.is_file())?;
         let v = self.values[index];
         Some(match spec.kind {
             Kind::Option { elements } => elements[v as usize].to_string_lossy().into_owned(),
@@ -175,7 +195,7 @@ mod tests {
             (SHAPE, "Shape"), (SIZE, "Size"), (SPIN, "Spin"), (FOCUS, "Focus"),
             (INTENSITY, "Intensity"), (PERSISTENCE, "Persistence"), (GLOW, "Glow"),
             (SCATTER, "Scatter"), (EXPOSURE, "Exposure"), (RED, "Colour"),
-            (GREEN, "Green"), (BLUE, "Blue"),
+            (GREEN, "Green"), (BLUE, "Blue"), (SVG_FILE, "SVG File"),
         ];
         for (i, name) in expect {
             assert_eq!(PARAMS[i].name.to_str().unwrap(), name);
@@ -189,6 +209,14 @@ mod tests {
             assert!((0.0..=1.0).contains(&h) || matches!(spec.kind, Kind::Option { .. }), "{:?}", spec.name);
             assert!((spec.from_host(h) - spec.default).abs() < 1e-5, "{:?}", spec.name);
         }
+    }
+
+    #[test]
+    fn file_param_accepts_svg() {
+        let spec = &PARAMS[SVG_FILE];
+        assert_eq!(spec.ffgl_type(), ffi::FF_TYPE_FILE);
+        assert_eq!(spec.extensions(), &[c"svg"]);
+        assert!(PARAMS.iter().filter(|s| s.is_file()).count() == 1);
     }
 
     #[test]
@@ -215,8 +243,8 @@ mod tests {
         p.set_host(SHAPE, 2.4);
         assert_eq!(p.shape(), ShapeKind::Triangle);
         p.set_host(SHAPE, 99.0);
-        assert_eq!(p.shape(), ShapeKind::Lissajous);
-        assert_eq!(p.display(SHAPE).unwrap(), "Lissajous");
+        assert_eq!(p.shape(), ShapeKind::File);
+        assert_eq!(p.display(SHAPE).unwrap(), "SVG File");
     }
 
     #[test]
@@ -225,6 +253,10 @@ mod tests {
         assert!(!p.set_host(PARAMS.len(), 0.5));
         assert!(!p.set_host(SIZE, f32::NAN));
         assert_eq!(p.get_host(PARAMS.len()), None);
+        // The file param carries a path, not a float.
+        assert!(!p.set_host(SVG_FILE, 1.0));
+        assert_eq!(p.get_host(SVG_FILE), None);
+        assert_eq!(p.display(SVG_FILE), None);
     }
 
     #[test]

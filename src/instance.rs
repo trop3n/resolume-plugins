@@ -1,7 +1,8 @@
 //! One plugin instance (one clip in Resolume).
 
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 use std::num::NonZeroU32;
+use std::path::{Path, PathBuf};
 
 use glow::HasContext;
 use osci_visualizer::OsciRenderer;
@@ -9,6 +10,7 @@ use osci_visualizer::OsciRenderer;
 use crate::ffi::FFGLViewportStruct;
 use crate::params::ParamValues;
 use crate::scene::Scene;
+use crate::svg_loader::SvgLoader;
 
 /// Frame rate assumed for animation if the host never sends a time.
 const FALLBACK_FPS: f64 = 60.0;
@@ -22,6 +24,9 @@ pub struct Instance {
     pub params: ParamValues,
     /// Backing storage for the last `FF_GET_PARAMETER_DISPLAY` string.
     pub display: CString,
+    /// SVG File parameter value, as the host set it ("" = none).
+    file_path: CString,
+    loader: SvgLoader,
     viewport: FFGLViewportStruct,
     host_time: Option<f64>,
     frames: u64,
@@ -35,6 +40,8 @@ impl Instance {
         Self {
             params: ParamValues::default(),
             display: CString::default(),
+            file_path: CString::default(),
+            loader: SvgLoader::new(),
             viewport,
             host_time: None,
             frames: 0,
@@ -55,6 +62,57 @@ impl Instance {
         self.gl = Some(GlState { gl, renderer });
     }
 
+    /// Set the SVG File parameter. Loading happens in the background; the
+    /// shapes appear on a later frame. An empty or null path clears the file.
+    pub fn set_file(&mut self, path: Option<&CStr>) {
+        let path = path.map(CStr::to_owned).unwrap_or_default();
+        if path == self.file_path {
+            return; // Hosts may resend the same value; don't reparse.
+        }
+        self.file_path = path;
+        if self.file_path.is_empty() {
+            self.loader.cancel();
+            self.scene.set_file_shapes(Vec::new());
+        } else {
+            self.loader.load(PathBuf::from(self.file_path.to_string_lossy().into_owned()));
+        }
+    }
+
+    pub fn file_path(&self) -> &CStr {
+        &self.file_path
+    }
+
+    /// Short text for the SVG File parameter: the file name, or "(none)".
+    pub fn file_display(&self) -> String {
+        let path = self.file_path.to_string_lossy();
+        match Path::new(path.as_ref()).file_name() {
+            Some(name) => name.to_string_lossy().into_owned(),
+            None => "(none)".to_owned(),
+        }
+    }
+
+    /// Pick up a finished SVG load, if any. Returns true if shapes changed.
+    pub fn poll_file(&mut self) -> bool {
+        let Some(loaded) = self.loader.poll() else {
+            return false;
+        };
+        match loaded.result {
+            Ok(shapes) => {
+                crate::log(&format!("loaded {} ({} shapes)", loaded.path.display(), shapes.len()));
+                self.scene.set_file_shapes(shapes);
+            }
+            Err(e) => {
+                crate::log(&format!("could not load SVG: {e}"));
+                self.scene.set_file_shapes(Vec::new());
+            }
+        }
+        true
+    }
+
+    pub fn has_file_shapes(&self) -> bool {
+        self.scene.has_file_shapes()
+    }
+
     pub fn set_viewport(&mut self, viewport: FFGLViewportStruct) {
         self.viewport = viewport;
     }
@@ -72,6 +130,7 @@ impl Instance {
     /// # Safety
     /// The host's GL context must be current on this thread.
     pub unsafe fn process(&mut self, host_fbo: u32) -> bool {
+        self.poll_file();
         let time = self.time();
         self.frames += 1;
         let Some(state) = self.gl.as_mut() else {
@@ -146,9 +205,76 @@ unsafe fn reset_to_host_defaults(gl: &glow::Context, host_fbo: Option<glow::Fram
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::svg_loader::tests::{temp_file, SQUARE_SVG};
 
     fn vp(x: u32, y: u32, width: u32, height: u32) -> FFGLViewportStruct {
         FFGLViewportStruct { x, y, width, height }
+    }
+
+    fn instance() -> Instance {
+        Instance::new(vp(0, 0, 640, 360))
+    }
+
+    fn cpath(p: &std::path::Path) -> CString {
+        CString::new(p.to_str().unwrap()).unwrap()
+    }
+
+    /// Poll until the background load lands.
+    fn wait_for_load(inst: &mut Instance) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while !inst.poll_file() {
+            assert!(std::time::Instant::now() < deadline, "load timed out");
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+
+    #[test]
+    fn set_file_loads_shapes_in_background() {
+        let path = temp_file("inst-load", "square.svg", SQUARE_SVG);
+        let mut inst = instance();
+        assert_eq!(inst.file_display(), "(none)");
+        inst.set_file(Some(&cpath(&path)));
+        assert_eq!(inst.file_path(), cpath(&path).as_c_str());
+        assert_eq!(inst.file_display(), "square.svg");
+        wait_for_load(&mut inst);
+        assert!(inst.has_file_shapes());
+    }
+
+    #[test]
+    fn bad_file_clears_shapes() {
+        let good = temp_file("inst-bad", "square.svg", SQUARE_SVG);
+        let bad = temp_file("inst-bad", "bad.svg", "not xml");
+        let mut inst = instance();
+        inst.set_file(Some(&cpath(&good)));
+        wait_for_load(&mut inst);
+        inst.set_file(Some(&cpath(&bad)));
+        wait_for_load(&mut inst);
+        assert!(!inst.has_file_shapes());
+    }
+
+    #[test]
+    fn empty_or_null_path_clears_file() {
+        let path = temp_file("inst-clear", "square.svg", SQUARE_SVG);
+        for clear in [Some(c""), None] {
+            let mut inst = instance();
+            inst.set_file(Some(&cpath(&path)));
+            wait_for_load(&mut inst);
+            inst.set_file(clear);
+            assert!(!inst.has_file_shapes());
+            assert_eq!(inst.file_display(), "(none)");
+        }
+    }
+
+    #[test]
+    fn same_path_is_not_reloaded() {
+        let path = temp_file("inst-same", "square.svg", SQUARE_SVG);
+        let mut inst = instance();
+        inst.set_file(Some(&cpath(&path)));
+        wait_for_load(&mut inst);
+        inst.set_file(Some(&cpath(&path)));
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        assert!(!inst.poll_file(), "resending the same path started a new load");
+        assert!(inst.has_file_shapes());
     }
 
     #[test]

@@ -43,6 +43,8 @@ mod windows_host {
     const FF_GET_PARAMETER_DISPLAY: u32 = 7;
     const FF_SET_PARAMETER: u32 = 8;
     const FF_GET_PARAMETER_TYPE: u32 = 15;
+    const FF_GET_PARAMETER: u32 = 9;
+    const FF_TYPE_FILE: u32 = 14;
     const FF_PROCESS_OPENGL: u32 = 17;
     const FF_INSTANTIATE_GL: u32 = 18;
     const FF_DEINSTANTIATE_GL: u32 = 19;
@@ -56,7 +58,9 @@ mod windows_host {
     const WIDTH: u32 = 640;
     const HEIGHT: u32 = 360;
     const FRAMES_PER_SHAPE: u32 = 30;
-    const SHAPES: [&str; 5] = ["circle", "square", "triangle", "star", "lissajous"];
+    const SHAPES: [&str; 6] = ["circle", "square", "triangle", "star", "lissajous", "svg"];
+    /// Index of the "SVG File" parameter.
+    const SVG_FILE_PARAM: u32 = 12;
 
     #[repr(C)]
     #[derive(Clone, Copy)]
@@ -144,8 +148,13 @@ mod windows_host {
             for i in 0..num {
                 let name = CStr::from_ptr(call(FF_GET_PARAMETER_NAME, uint(i), std::ptr::null_mut()).p as *const c_char);
                 let ty = call(FF_GET_PARAMETER_TYPE, uint(i), std::ptr::null_mut()).u;
-                let def = f32::from_bits(call(FF_GET_PARAMETER_DEFAULT, uint(i), std::ptr::null_mut()).u);
-                println!("  param {i:2}: {:<12} type {ty:3} default {def:.3}", name.to_string_lossy());
+                let def = call(FF_GET_PARAMETER_DEFAULT, uint(i), std::ptr::null_mut());
+                let def = if ty == FF_TYPE_FILE {
+                    format!("{:?}", CStr::from_ptr(def.p as *const c_char))
+                } else {
+                    format!("{:.3}", f32::from_bits(def.u))
+                };
+                println!("  param {i:2}: {:<12} type {ty:3} default {def}", name.to_string_lossy());
             }
 
             // ── Host framebuffer the plugin renders into ──
@@ -172,6 +181,19 @@ mod windows_host {
 
             let mut failures = Vec::new();
             for (shape_idx, shape) in SHAPES.iter().enumerate() {
+                if *shape == "svg" {
+                    // Pick the file the way Resolume's file browser would.
+                    let svg = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples").join("arrow.svg");
+                    let path = std::ffi::CString::new(svg.to_str().ok_or("svg path")?).map_err(|e| e.to_string())?;
+                    let set = SetParam { index: SVG_FILE_PARAM, value: ptr(path.as_ptr()) };
+                    check(call(FF_SET_PARAMETER, ptr(&set), inst).u == FF_SUCCESS, "set svg file")?;
+                    let got = CStr::from_ptr(call(FF_GET_PARAMETER, uint(SVG_FILE_PARAM), inst).p as *const c_char);
+                    check(got == path.as_c_str(), "svg file param reads back")?;
+                    let shown = CStr::from_ptr(call(FF_GET_PARAMETER_DISPLAY, uint(SVG_FILE_PARAM), inst).p as *const c_char);
+                    println!("  svg file shown as {:?}", shown.to_string_lossy());
+                    // Loading runs in the background; give it a moment before rendering.
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+                }
                 let set = SetParam { index: 0, value: uint((shape_idx as f32).to_bits()) };
                 check(call(FF_SET_PARAMETER, ptr(&set), inst).u == FF_SUCCESS, "set shape")?;
                 let shown = CStr::from_ptr(call(FF_GET_PARAMETER_DISPLAY, uint(0), inst).p as *const c_char);
