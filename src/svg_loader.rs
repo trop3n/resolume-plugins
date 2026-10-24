@@ -76,15 +76,64 @@ impl SvgLoader {
     }
 }
 
+/// Largest SVG we'll read. Real line art is far smaller; this stops a huge or
+/// growing file from filling memory.
+pub const MAX_SVG_BYTES: u64 = 32 * 1024 * 1024;
+
 /// Read and parse an SVG. `parse_svg` returns shapes Y-up, centred and
 /// fitted to -0.9..0.9.
 pub fn load_svg(path: &Path) -> Result<Shapes, String> {
-    let data = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    load_svg_limited(path, MAX_SVG_BYTES)
+}
+
+fn load_svg_limited(path: &Path, max_bytes: u64) -> Result<Shapes, String> {
+    let data = read_limited(path, max_bytes).map_err(|e| format!("{}: {e}", path.display()))?;
     let shapes = osci_parsers::svg::parse_svg(&data).map_err(|e| format!("{}: {e}", path.display()))?;
     if shapes.is_empty() {
         return Err(format!("{}: no drawable paths found", path.display()));
     }
     Ok(shapes)
+}
+
+/// Read a regular file of at most `max_bytes`.
+fn read_limited(path: &Path, max_bytes: u64) -> Result<Vec<u8>, String> {
+    use std::io::Read;
+
+    if is_device_path(path) {
+        // e.g. \\.\pipe\x or \\.\COM1: opening these can block forever.
+        return Err("device paths are not supported".into());
+    }
+    let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
+    let meta = file.metadata().map_err(|e| e.to_string())?;
+    if !meta.is_file() {
+        return Err("not a regular file".into());
+    }
+    if meta.len() > max_bytes {
+        return Err(format!("file is {} bytes; the limit is {max_bytes}", meta.len()));
+    }
+    // Read through a limit too, in case the file grows after the size check.
+    let mut data = Vec::with_capacity(meta.len() as usize);
+    file.take(max_bytes + 1).read_to_end(&mut data).map_err(|e| e.to_string())?;
+    if data.len() as u64 > max_bytes {
+        return Err(format!("file is over the {max_bytes}-byte limit"));
+    }
+    Ok(data)
+}
+
+/// Windows device-namespace paths (`\\.\...`, and `\\?\...` unless it is just
+/// the long-path form of a drive path like `\\?\C:\...`). Network shares
+/// (`\\server\share`) are allowed, like elsewhere in Resolume.
+fn is_device_path(path: &Path) -> bool {
+    let s = path.as_os_str().to_string_lossy().replace('/', "\\");
+    if s.starts_with("\\\\.\\") {
+        return true;
+    }
+    if let Some(rest) = s.strip_prefix("\\\\?\\") {
+        let b = rest.as_bytes();
+        let is_drive = b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':';
+        return !is_drive;
+    }
+    false
 }
 
 #[cfg(test)]
@@ -143,6 +192,37 @@ pub(crate) mod tests {
     fn reports_missing_file() {
         let err = load_svg(Path::new("definitely/not/here.svg")).err().unwrap();
         assert!(err.contains("here.svg"), "{err}");
+    }
+
+    #[test]
+    fn rejects_device_paths() {
+        for p in [r"\\.\pipe\x.svg", r"\\.\COM1", "//./pipe/x", r"\\?\GLOBALROOT\Device\x.svg", r"\\?\UNC\srv\x.svg"] {
+            let err = load_svg(Path::new(p)).err().unwrap();
+            assert!(err.contains("device paths"), "{p}: {err}");
+        }
+    }
+
+    #[test]
+    fn allows_drive_and_network_paths_through_the_device_check() {
+        for p in [r"C:\art\x.svg", r"\\?\C:\art\x.svg", r"\\server\share\x.svg", "relative/x.svg"] {
+            assert!(!is_device_path(Path::new(p)), "{p}");
+        }
+    }
+
+    #[test]
+    fn rejects_directories() {
+        let dir = temp_file("dir", "placeholder.svg", SQUARE_SVG);
+        let err = load_svg(dir.parent().unwrap()).err().unwrap();
+        // Windows can't open a directory as a file at all; Unix opens it and we reject it.
+        assert!(err.contains("not a regular file") || err.contains("denied") || err.contains("directory"), "{err}");
+    }
+
+    #[test]
+    fn rejects_oversized_files() {
+        let path = temp_file("big", "square.svg", SQUARE_SVG);
+        let err = load_svg_limited(&path, 16).err().unwrap();
+        assert!(err.contains("limit"), "{err}");
+        assert!(load_svg_limited(&path, SQUARE_SVG.len() as u64).is_ok());
     }
 
     #[test]
