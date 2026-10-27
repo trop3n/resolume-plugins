@@ -1,21 +1,24 @@
-//! Minimal FFGL host for testing rusci_scope.dll without Resolume.
+//! Minimal FFGL host for testing the plugin without Resolume.
 //!
-//! It loads the DLL, creates an OpenGL 4.1 core context on a hidden window,
-//! drives the plugin through the calls Resolume makes, checks the GL state
-//! rules the FFGL SDK enforces, and saves one PNG per shape.
+//! It loads the plugin, creates an OpenGL 4.1 core context (a hidden window
+//! with WGL on Windows, an offscreen CGL context on macOS), drives the plugin
+//! through the calls Resolume makes, checks the GL state rules the FFGL SDK
+//! enforces, and saves one PNG per shape.
 //!
-//!     cargo run --release -p osci-ffgl --example ffgl_host [path\to\rusci_scope.dll]
+//!     cargo run --release --example ffgl_host [plugin]
 //!
-//! Output goes to target\ffgl-host\. Exits non-zero if any check fails.
+//! `plugin` defaults to the library next to this example (rusci_scope.dll or
+//! librusci_scope.dylib); on macOS it can also be a RusciScope.bundle.
+//! Output goes to target/ffgl-host/. Exits non-zero if any check fails.
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 fn main() {
-    eprintln!("ffgl_host only runs on Windows.");
+    eprintln!("ffgl_host only runs on Windows and macOS.");
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 fn main() {
-    std::process::exit(match windows_host::run() {
+    std::process::exit(match host::run() {
         Ok(()) => 0,
         Err(e) => {
             eprintln!("FAILED: {e}");
@@ -24,16 +27,17 @@ fn main() {
     });
 }
 
-#[cfg(windows)]
-mod windows_host {
+#[cfg(any(windows, target_os = "macos"))]
+mod host {
     use std::ffi::{c_char, c_void, CStr};
     use std::path::PathBuf;
 
     use glow::HasContext;
-    use windows_sys::Win32::Graphics::Gdi::{GetDC, HDC};
-    use windows_sys::Win32::Graphics::OpenGL::*;
-    use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
-    use windows_sys::Win32::UI::WindowsAndMessaging::*;
+
+    #[cfg(target_os = "macos")]
+    use super::cgl::create_gl_context;
+    #[cfg(windows)]
+    use super::wgl::create_gl_context;
 
     // FFGL values (same as the plugin's ffi.rs, repeated so this tests the DLL boundary).
     const FF_GET_INFO: u32 = 0;
@@ -106,7 +110,21 @@ mod windows_host {
 
     type PlugMain = unsafe extern "system" fn(u32, FFMixed, *mut c_void) -> FFMixed;
     type SetLogCallback = unsafe extern "system" fn(Option<unsafe extern "system" fn(*mut c_char)>);
-    type CreateContextAttribs = unsafe extern "system" fn(HDC, HGLRC, *const i32) -> HGLRC;
+
+    #[cfg(windows)]
+    const DEFAULT_LIBRARY: &str = "rusci_scope.dll";
+    #[cfg(target_os = "macos")]
+    const DEFAULT_LIBRARY: &str = "librusci_scope.dylib";
+
+    /// The library to load: a dll/dylib as given, or a bundle's executable.
+    fn library_path(arg: PathBuf) -> PathBuf {
+        if arg.extension().is_some_and(|e| e == "bundle") {
+            let name = arg.file_stem().unwrap_or_default().to_owned();
+            arg.join("Contents").join("MacOS").join(name)
+        } else {
+            arg
+        }
+    }
 
     unsafe extern "system" fn print_log(msg: *mut c_char) {
         println!("  plugin log: {}", CStr::from_ptr(msg).to_string_lossy());
@@ -114,9 +132,9 @@ mod windows_host {
 
     pub fn run() -> Result<(), String> {
         let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-        // exe is target\<profile>\examples\ffgl_host.exe
+        // exe is target/<profile>/examples/ffgl_host[.exe]
         let profile_dir = exe.parent().and_then(|p| p.parent()).ok_or("unexpected exe location")?;
-        let dll = std::env::args().nth(1).map(PathBuf::from).unwrap_or_else(|| profile_dir.join("rusci_scope.dll"));
+        let dll = library_path(std::env::args().nth(1).map(PathBuf::from).unwrap_or_else(|| profile_dir.join(DEFAULT_LIBRARY)));
         let out_dir = profile_dir.parent().ok_or("unexpected exe location")?.join("ffgl-host");
         std::fs::create_dir_all(&out_dir).map_err(|e| e.to_string())?;
 
@@ -296,9 +314,29 @@ mod windows_host {
         }
         flipped
     }
+}
+
+#[cfg(windows)]
+mod wgl {
+    use std::ffi::c_void;
+
+    use windows_sys::Win32::Graphics::Gdi::{GetDC, HDC};
+    use windows_sys::Win32::Graphics::OpenGL::*;
+    use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
+    use windows_sys::Win32::UI::WindowsAndMessaging::*;
+
+    type CreateContextAttribs = unsafe extern "system" fn(HDC, HGLRC, *const i32) -> HGLRC;
+
+    // Window size doesn't matter: rendering goes to an FBO.
+    const WIDTH: u32 = 640;
+    const HEIGHT: u32 = 360;
+
+    fn check(ok: bool, what: &str) -> Result<(), String> {
+        if ok { Ok(()) } else { Err(format!("{what} failed")) }
+    }
 
     /// Hidden window + OpenGL 4.1 core context (what Resolume gives plugins).
-    unsafe fn create_gl_context() -> Result<glow::Context, String> {
+    pub unsafe fn create_gl_context() -> Result<glow::Context, String> {
         let instance = GetModuleHandleA(std::ptr::null());
         let class_name = c"RusciFfglHost".as_ptr().cast();
         let class = WNDCLASSA {
@@ -364,5 +402,72 @@ mod windows_host {
             let gl32 = GetModuleHandleA(c"opengl32.dll".as_ptr().cast());
             GetProcAddress(gl32, name.as_ptr().cast()).map_or(std::ptr::null(), |f| f as *const c_void)
         }))
+    }
+}
+
+#[cfg(target_os = "macos")]
+mod cgl {
+    use std::ffi::{c_char, c_int, c_void};
+
+    type CGLPixelFormatObj = *mut c_void;
+    type CGLContextObj = *mut c_void;
+    type CGLError = c_int;
+
+    #[link(name = "OpenGL", kind = "framework")]
+    extern "C" {
+        fn CGLChoosePixelFormat(attribs: *const c_int, pix: *mut CGLPixelFormatObj, npix: *mut c_int) -> CGLError;
+        fn CGLCreateContext(pix: CGLPixelFormatObj, share: CGLContextObj, ctx: *mut CGLContextObj) -> CGLError;
+        fn CGLDestroyPixelFormat(pix: CGLPixelFormatObj) -> CGLError;
+        fn CGLSetCurrentContext(ctx: CGLContextObj) -> CGLError;
+    }
+    extern "C" {
+        fn dlopen(path: *const c_char, mode: c_int) -> *mut c_void;
+        fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
+    }
+
+    // Values from <OpenGL/CGLTypes.h>.
+    const KCGLPFA_ALLOW_OFFLINE_RENDERERS: c_int = 96;
+    const KCGLPFA_OPENGL_PROFILE: c_int = 99;
+    const KCGL_OGLP_VERSION_GL4_CORE: c_int = 0x4100;
+    const KCGLPFA_RENDERER_ID: c_int = 70;
+    const KCGL_RENDERER_GENERIC_FLOAT_ID: c_int = 0x0002_0400;
+
+    /// Offscreen OpenGL 4.1 core context (what Resolume gives plugins on
+    /// macOS). Rendering goes to the host's FBO, so no window is needed.
+    /// Falls back to Apple's software renderer on machines without a GPU,
+    /// such as CI runners.
+    pub unsafe fn create_gl_context() -> Result<glow::Context, String> {
+        let hardware = [KCGLPFA_OPENGL_PROFILE, KCGL_OGLP_VERSION_GL4_CORE, KCGLPFA_ALLOW_OFFLINE_RENDERERS, 0];
+        let software = [
+            KCGLPFA_OPENGL_PROFILE, KCGL_OGLP_VERSION_GL4_CORE,
+            KCGLPFA_RENDERER_ID, KCGL_RENDERER_GENERIC_FLOAT_ID,
+            0,
+        ];
+        let mut pix: CGLPixelFormatObj = std::ptr::null_mut();
+        let mut npix = 0;
+        for attribs in [&hardware[..], &software[..]] {
+            if CGLChoosePixelFormat(attribs.as_ptr(), &mut pix, &mut npix) == 0 && !pix.is_null() {
+                break;
+            }
+        }
+        if pix.is_null() {
+            return Err("no OpenGL 4.1 core pixel format".into());
+        }
+        let mut ctx: CGLContextObj = std::ptr::null_mut();
+        let err = CGLCreateContext(pix, std::ptr::null_mut(), &mut ctx);
+        CGLDestroyPixelFormat(pix);
+        if err != 0 || ctx.is_null() {
+            return Err(format!("CGLCreateContext failed ({err})"));
+        }
+        if CGLSetCurrentContext(ctx) != 0 {
+            return Err("CGLSetCurrentContext failed".into());
+        }
+
+        const RTLD_LAZY: c_int = 0x1;
+        let opengl = dlopen(c"/System/Library/Frameworks/OpenGL.framework/OpenGL".as_ptr(), RTLD_LAZY);
+        if opengl.is_null() {
+            return Err("could not open the OpenGL framework".into());
+        }
+        Ok(glow::Context::from_loader_function_cstr(|name| dlsym(opengl, name.as_ptr()) as *const c_void))
     }
 }

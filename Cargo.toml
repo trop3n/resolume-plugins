@@ -37,6 +37,9 @@ windows-sys = { version = "0.59", features = [
     "Win32_System_LibraryLoader",
     "Win32_UI_WindowsAndMessaging",
 ] }
+
+[dev-dependencies]
+# Used by the test host in examples/ffgl_host.rs.
 libloading = "0.8"
 image = "0.25"
 

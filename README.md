@@ -6,17 +6,49 @@ Resolume's Sources list and generates oscilloscope-style vector graphics
 [rusci-render](https://github.com/trop3n/rusci-render), a Rust port of
 [osci-render](https://github.com/jameshball/osci-render).
 
-Windows x64 only for now. Needs Resolume 7.0.3 or later (FFGL 2.1).
+Runs on Windows x64 and macOS (universal: Apple Silicon and Intel). Needs
+Resolume 7.0.3 or later (FFGL 2.1).
 
 ## Install
+
+Ready-built plugins come from CI: open the latest run on the
+[Actions page](https://github.com/trop3n/resolume-rusci/actions) and download
+**RusciScope-windows** or **RusciScope-macos** (needs a GitHub login).
+
+### Windows
+
+Put `RusciScope.dll` in `Documents\Resolume Arena\Extra Effects\`. Or
+build and install from source:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
 This builds `target\release\rusci_scope.dll` and copies it to
-`Documents\Resolume Arena\Extra Effects\RusciScope.dll`. Restart Resolume,
-then drag **Rusci Scope** from Sources onto a clip slot.
+`Documents\Resolume Arena\Extra Effects\RusciScope.dll`.
+
+### macOS
+
+Unzip the download and follow `INSTALL.txt`. In short, copy
+`RusciScope.bundle` to `~/Documents/Resolume Arena/Extra Effects/`, then
+clear the download quarantine (the plugin is ad-hoc signed, not signed with
+an Apple developer certificate):
+
+```sh
+xattr -dr com.apple.quarantine ~/Documents/"Resolume Arena"/"Extra Effects"/RusciScope.bundle
+```
+
+To build the bundle yourself on a Mac:
+
+```sh
+rustup target add aarch64-apple-darwin x86_64-apple-darwin
+scripts/bundle-macos.sh
+```
+
+### Then
+
+Restart Resolume (it only scans plugins at startup), then drag
+**Rusci Scope** from Sources onto a clip slot.
 
 ## Parameters
 
@@ -51,17 +83,23 @@ will look sparse or flicker; simpler line art works best.
 
 ## Test without Resolume
 
-```powershell
+```sh
 cargo test
 cargo build --release
 cargo run --release --example ffgl_host
 ```
 
-`ffgl_host` loads the DLL, creates an OpenGL 4.1 core context (what
+`ffgl_host` loads the plugin, creates an OpenGL 4.1 core context (what
 Resolume provides), makes the same calls Resolume does, checks after every
 call that the plugin left GL in the state the FFGL SDK requires, and writes
-one PNG per shape to `target\ffgl-host\`, including `examples\arrow.svg`
+one PNG per shape to `target/ffgl-host/`, including `examples/arrow.svg`
 loaded through the SVG File parameter. It exits non-zero on any failure.
+It runs on Windows (WGL) and macOS (CGL); on macOS it also accepts a
+bundle: `cargo run --release --example ffgl_host -- path/to/RusciScope.bundle`.
+
+CI runs clippy and the tests on both platforms, builds the plugins, and runs
+`ffgl_host` against the macOS bundle on both architectures (Intel through
+Rosetta). Windows runners can't run it: they only offer OpenGL 1.1.
 
 Unit tests cover the ABI struct layouts, parameter mapping, `plugMain`
 dispatch, shape sampling and SVG loading. They also run on Linux.
@@ -97,7 +135,9 @@ applying the patch.
 | `src/instance.rs`       | Per-clip state; drives `osci_visualizer::OsciRenderer`  |
 | `src/svg_loader.rs`     | Background SVG loading via `osci_parsers::svg`          |
 | `src/gl_loader.rs`      | Loads GL functions from the host's context             |
-| `examples/ffgl_host.rs` | Stand-in host for testing                              |
+| `examples/ffgl_host.rs` | Stand-in host for testing (Windows and macOS)          |
+| `scripts/bundle-macos.sh` | Builds the universal macOS bundle                    |
+| `packaging/macos/`      | Bundle `Info.plist` and macOS install notes            |
 
 The FFGL interface is written directly in Rust (no C++ SDK, no bindgen).
 

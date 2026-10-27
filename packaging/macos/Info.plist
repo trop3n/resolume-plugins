@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Based on build/osx/FFGLPlugin-Info.plist in the FFGL SDK.
+     scripts/bundle-macos.sh fills in @VERSION@. -->
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>English</string>
+	<key>CFBundleExecutable</key>
+	<string>RusciScope</string>
+	<key>CFBundleIdentifier</key>
+	<string>io.github.trop3n.rusci-scope</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>Rusci Scope</string>
+	<key>CFBundlePackageType</key>
+	<string>BNDL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>@VERSION@</string>
+	<key>CFBundleSignature</key>
+	<string>????</string>
+	<key>CFBundleVersion</key>
+	<string>@VERSION@</string>
+	<key>CSResourcesFileMapped</key>
+	<string>yes</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>10.15</string>
+</dict>
+</plist>

@@ -1,0 +1,30 @@
+Rusci Scope for Resolume (macOS)
+================================
+
+Needs Resolume Arena or Avenue 7.0.3 or later. The plugin is universal, so
+it runs on Apple Silicon and Intel Macs.
+
+1. Quit Resolume.
+
+2. Open Terminal, go to the folder this file is in, and run:
+
+     mkdir -p ~/Documents/"Resolume Arena"/"Extra Effects"
+     cp -R RusciScope.bundle ~/Documents/"Resolume Arena"/"Extra Effects"/
+     xattr -dr com.apple.quarantine ~/Documents/"Resolume Arena"/"Extra Effects"/RusciScope.bundle
+
+   (For Avenue, use "Resolume Avenue" instead of "Resolume Arena".)
+
+   The last line matters: the plugin isn't signed with an Apple developer
+   certificate, so macOS blocks it while it is marked as downloaded.
+
+3. Start Resolume. Rusci Scope is in the Sources tab; drag it onto a clip.
+
+Updating: quit Resolume, delete the old RusciScope.bundle from
+Extra Effects, then repeat step 2.
+
+If it doesn't appear in Sources:
+  - Check the bundle is directly inside Extra Effects, not in a subfolder.
+  - Run the xattr line again.
+  - Check Resolume can read your Documents folder: System Settings >
+    Privacy & Security > Files and Folders > Resolume Arena.
+  - Look in Resolume's log for "Rusci Scope" or "RusciScope".

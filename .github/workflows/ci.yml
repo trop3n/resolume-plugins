@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  windows:
+    name: Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test
+
+      - name: Build plugin
+        run: cargo build --release
+
+      # The test host isn't run here: Windows runners have no GPU and only
+      # offer OpenGL 1.1, so it can't create the 4.1 context Resolume uses.
+
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item target/release/rusci_scope.dll dist/RusciScope.dll
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RusciScope-windows
+          path: dist/RusciScope.dll
+
+  macos:
+    name: macOS (universal bundle)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test
+
+      - name: Build bundle
+        run: scripts/bundle-macos.sh
+
+      # Load the bundle like Resolume does, render every shape and check the
+      # GL state after each call. Uses Apple's software renderer if the
+      # runner has no GPU.
+      - name: Test host (Apple Silicon)
+        run: cargo run --release --example ffgl_host -- target/macos/RusciScope-macos/RusciScope.bundle
+
+      # The same check on the bundle's Intel half, through Rosetta.
+      - name: Test host (Intel, via Rosetta)
+        continue-on-error: true
+        run: cargo run --release --target x86_64-apple-darwin --example ffgl_host -- target/macos/RusciScope-macos/RusciScope.bundle
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RusciScope-macos
+          path: target/macos/RusciScope-macos.zip
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ffgl-host-renders-macos
+          path: target/ffgl-host/
+          if-no-files-found: ignore
