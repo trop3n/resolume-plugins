@@ -10,8 +10,16 @@ env:
 
 jobs:
   windows:
-    name: Windows
+    name: Windows (${{ matrix.plugin }})
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Folders under plugins/. Add new plugins here and in the macOS job.
+        plugin: [rusci-scope]
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v5
 
@@ -21,32 +29,43 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - name: Read plugin names
+        run: |
+          manifest=plugins/${{ matrix.plugin }}/Cargo.toml
+          echo "PACKAGE=$(sed -n '/^\[package\]/,/^\[/ s/^name = "\(.*\)"/\1/p' $manifest | head -n 1)" >> $GITHUB_ENV
+          lib=$(sed -n '/^\[lib\]/,/^\[/ s/^name = "\(.*\)"/\1/p' $manifest | head -n 1)
+          echo "LIB=${lib}" >> $GITHUB_ENV
+          echo "FILE_NAME=$(sed -n 's/^file-name = "\(.*\)"/\1/p' $manifest | head -n 1)" >> $GITHUB_ENV
+
       - name: Clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy -p "$PACKAGE" --all-targets -- -D warnings
 
       - name: Test
-        run: cargo test
+        run: cargo test -p "$PACKAGE"
 
       - name: Build plugin
-        run: cargo build --release
+        run: cargo build --release --lib -p "$PACKAGE"
 
       # The test host isn't run here: Windows runners have no GPU and only
       # offer OpenGL 1.1, so it can't create the 4.1 context Resolume uses.
 
       - name: Package
-        shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force dist | Out-Null
-          Copy-Item target/release/rusci_scope.dll dist/RusciScope.dll
+          mkdir -p dist
+          cp "target/release/$LIB.dll" "dist/$FILE_NAME.dll"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: RusciScope-windows
-          path: dist/RusciScope.dll
+          name: ${{ env.FILE_NAME }}-windows
+          path: dist/${{ env.FILE_NAME }}.dll
 
   macos:
-    name: macOS (universal bundle)
+    name: macOS (${{ matrix.plugin }}, universal bundle)
     runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        plugin: [rusci-scope]
     steps:
       - uses: actions/checkout@v5
 
@@ -57,34 +76,43 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - name: Read plugin names
+        run: |
+          manifest=plugins/${{ matrix.plugin }}/Cargo.toml
+          echo "PACKAGE=$(sed -n '/^\[package\]/,/^\[/ s/^name = "\(.*\)"/\1/p' $manifest | head -n 1)" >> $GITHUB_ENV
+          echo "FILE_NAME=$(sed -n 's/^file-name = "\(.*\)"/\1/p' $manifest | head -n 1)" >> $GITHUB_ENV
+          if [ -f plugins/${{ matrix.plugin }}/examples/ffgl_host.rs ]; then echo "HAS_HOST=1" >> $GITHUB_ENV; fi
+
       - name: Clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy -p "$PACKAGE" --all-targets -- -D warnings
 
       - name: Test
-        run: cargo test
+        run: cargo test -p "$PACKAGE"
 
       - name: Build bundle
-        run: scripts/bundle-macos.sh
+        run: scripts/bundle-macos.sh ${{ matrix.plugin }}
 
-      # Load the bundle like Resolume does, render every shape and check the
-      # GL state after each call. Uses Apple's software renderer if the
+      # Plugins with an examples/ffgl_host.rs get loaded like Resolume does
+      # and checked after every call. Uses Apple's software renderer if the
       # runner has no GPU.
       - name: Test host (Apple Silicon)
-        run: cargo run --release --example ffgl_host -- target/macos/RusciScope-macos/RusciScope.bundle
+        if: env.HAS_HOST == '1'
+        run: cargo run --release -p "$PACKAGE" --example ffgl_host -- "target/macos/$FILE_NAME-macos/$FILE_NAME.bundle"
 
       # The same check on the bundle's Intel half, through Rosetta.
       - name: Test host (Intel, via Rosetta)
+        if: env.HAS_HOST == '1'
         continue-on-error: true
-        run: cargo run --release --target x86_64-apple-darwin --example ffgl_host -- target/macos/RusciScope-macos/RusciScope.bundle
+        run: cargo run --release -p "$PACKAGE" --target x86_64-apple-darwin --example ffgl_host -- "target/macos/$FILE_NAME-macos/$FILE_NAME.bundle"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: RusciScope-macos
-          path: target/macos/RusciScope-macos.zip
+          name: ${{ env.FILE_NAME }}-macos
+          path: target/macos/${{ env.FILE_NAME }}-macos.zip
 
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && env.HAS_HOST == '1'
         with:
-          name: ffgl-host-renders-macos
+          name: ffgl-host-renders-${{ matrix.plugin }}-macos
           path: target/ffgl-host/
           if-no-files-found: ignore

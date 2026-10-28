@@ -1,47 +1,9 @@
-[package]
-name = "resolume-rusci"
-description = "Rusci Scope: oscilloscope-style FFGL source plugin for Resolume, built on rusci-render"
-version = "0.1.0"
-edition = "2021"
-license = "GPL-3.0-only"
-publish = false
-
-[lib]
-# The DLL Resolume loads is rusci_scope.dll.
-name = "rusci_scope"
-crate-type = ["cdylib", "rlib"]
-
-# Shared engine crates from rusci-render, pinned to a commit.
-# To develop against a local checkout instead, see README.md.
-[dependencies]
-osci-core = { git = "https://github.com/trop3n/rusci-render", rev = "a6f189cef2a104dc538c8142a2667acb8e97cc56" }
-osci-synth = { git = "https://github.com/trop3n/rusci-render", rev = "a6f189cef2a104dc538c8142a2667acb8e97cc56" }
-osci-parsers = { git = "https://github.com/trop3n/rusci-render", rev = "a6f189cef2a104dc538c8142a2667acb8e97cc56" }
-osci-visualizer = { git = "https://github.com/trop3n/rusci-render", rev = "a6f189cef2a104dc538c8142a2667acb8e97cc56" }
-# Must match the glow version osci-visualizer uses.
-glow = "0.16"
-
-[target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = [
-    "Win32_Foundation",
-    "Win32_Graphics_OpenGL",
-    "Win32_System_LibraryLoader",
-] }
-
-[target.'cfg(windows)'.dev-dependencies]
-# Used by the test host in examples/ffgl_host.rs.
-windows-sys = { version = "0.59", features = [
-    "Win32_Foundation",
-    "Win32_Graphics_Gdi",
-    "Win32_Graphics_OpenGL",
-    "Win32_System_LibraryLoader",
-    "Win32_UI_WindowsAndMessaging",
-] }
-
-[dev-dependencies]
-# Used by the test host in examples/ffgl_host.rs.
-libloading = "0.8"
-image = "0.25"
+[workspace]
+resolver = "2"
+# One folder per plugin. Add new plugins here.
+members = [
+    "plugins/rusci-scope",
+]
 
 # Windows cargo can't create incremental-compilation lock files on a WSL
 # (\\wsl.localhost) path. Builds are small, so turn incremental off.
