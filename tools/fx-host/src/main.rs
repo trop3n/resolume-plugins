@@ -11,6 +11,10 @@
 //!     --frames N    frames to render (default 3; the last one is saved)
 //!     --time T      host time of the first frame in seconds (default 0)
 //!
+//! Sequence mode: if the input is a folder, its PNGs (sorted by name, all
+//! the same size) are fed one per frame at 30 fps, and the output must be
+//! a folder that gets one PNG per frame. --frames is ignored.
+//!
 //! `Param=value` sets a parameter by its Resolume name before rendering.
 //! The value is what the host sends: 0..1 for sliders, 0/1 for toggles, or
 //! an option's element name (or index). Exits non-zero if a check fails.
@@ -170,9 +174,30 @@ mod host {
         Ok(Args { plugin: library_path(plugin), input, output, frames: frames.max(1), time, sets })
     }
 
+    fn load(path: &std::path::Path) -> Result<image::RgbaImage, String> {
+        Ok(image::open(path).map_err(|e| format!("read {}: {e}", path.display()))?.to_rgba8())
+    }
+
     pub fn run() -> Result<(), String> {
         let args = parse_args()?;
-        let img = image::open(&args.input).map_err(|e| format!("read {}: {e}", args.input.display()))?.to_rgba8();
+        let sequence = args.input.is_dir();
+        let input_files: Vec<PathBuf> = if sequence {
+            let mut v: Vec<PathBuf> = std::fs::read_dir(&args.input)
+                .map_err(|e| e.to_string())?
+                .filter_map(|e| e.ok().map(|e| e.path()))
+                .filter(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("png")))
+                .collect();
+            v.sort();
+            if v.is_empty() {
+                return Err(format!("no PNGs in {}", args.input.display()));
+            }
+            std::fs::create_dir_all(&args.output).map_err(|e| e.to_string())?;
+            v
+        } else {
+            vec![args.input.clone()]
+        };
+        let frames = if sequence { input_files.len() as u32 } else { args.frames };
+        let img = load(&input_files[0])?;
         let (w, h) = img.dimensions();
 
         unsafe {
@@ -263,8 +288,19 @@ mod host {
             let mut tex = Texture { width: w, height: h, hardware_width: w, hardware_height: h, handle: input_tex.0.get() };
             let mut inputs = [&mut tex as *mut Texture];
             let mut times = Vec::new();
-            for frame in 0..args.frames {
-                let t = args.time + frame as f64 / 60.0;
+            let fps = if sequence { 30.0 } else { 60.0 };
+            for frame in 0..frames {
+                if sequence && frame > 0 {
+                    let next = load(&input_files[frame as usize])?;
+                    check(next.dimensions() == (w, h), "sequence frames all the same size")?;
+                    gl.bind_texture(glow::TEXTURE_2D, Some(input_tex));
+                    gl.tex_sub_image_2d(
+                        glow::TEXTURE_2D, 0, 0, 0, w as i32, h as i32, glow::RGBA, glow::UNSIGNED_BYTE,
+                        glow::PixelUnpackData::Slice(Some(&flip_rows(next.as_raw(), w, h))),
+                    );
+                    gl.bind_texture(glow::TEXTURE_2D, None);
+                }
+                let t = args.time + frame as f64 / fps;
                 call(FF_SET_TIME, ptr(&t), inst);
                 gl.bind_framebuffer(glow::FRAMEBUFFER, Some(fbo));
                 gl.clear_color(0.0, 0.0, 0.0, 0.0);
@@ -276,18 +312,18 @@ mod host {
                 gl.finish();
                 times.push(start.elapsed().as_secs_f64() * 1000.0);
                 validate_state(&gl, fbo, &format!("after process (frame {frame})"))?;
+                if sequence {
+                    let path = args.output.join(format!("frame_{frame:04}.png"));
+                    save_framebuffer(&gl, w, h, &path)?;
+                }
             }
             // The first frame includes driver warm-up.
             let steady = if times.len() > 1 { &times[1..] } else { &times[..] };
             println!("Frame time at {w}x{h}: {:.2} ms (first frame {:.2} ms)", steady.iter().sum::<f64>() / steady.len() as f64, times[0]);
 
-            let mut pixels = vec![0u8; (w * h * 4) as usize];
-            gl.read_pixels(
-                0, 0, w as i32, h as i32, glow::RGBA, glow::UNSIGNED_BYTE,
-                glow::PixelPackData::Slice(Some(&mut pixels)),
-            );
-            let out = image::RgbaImage::from_raw(w, h, flip_rows(&pixels, w, h)).ok_or("image buffer size")?;
-            out.save(&args.output).map_err(|e| format!("save {}: {e}", args.output.display()))?;
+            if !sequence {
+                save_framebuffer(&gl, w, h, &args.output)?;
+            }
             println!("Wrote {}", args.output.display());
 
             check(call(FF_DEINSTANTIATE_GL, uint(0), inst).u == FF_SUCCESS, "deinstantiate")?;
@@ -297,6 +333,17 @@ mod host {
             println!("All checks passed.");
             Ok(())
         }
+    }
+
+    /// Save the bound framebuffer as a PNG.
+    unsafe fn save_framebuffer(gl: &glow::Context, w: u32, h: u32, path: &std::path::Path) -> Result<(), String> {
+        let mut pixels = vec![0u8; (w * h * 4) as usize];
+        gl.read_pixels(
+            0, 0, w as i32, h as i32, glow::RGBA, glow::UNSIGNED_BYTE,
+            glow::PixelPackData::Slice(Some(&mut pixels)),
+        );
+        let out = image::RgbaImage::from_raw(w, h, flip_rows(&pixels, w, h)).ok_or("image buffer size")?;
+        out.save(path).map_err(|e| format!("save {}: {e}", path.display()))
     }
 
     fn flip_rows(pixels: &[u8], w: u32, h: u32) -> Vec<u8> {

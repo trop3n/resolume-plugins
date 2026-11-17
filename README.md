@@ -24,6 +24,7 @@ Intel).
 | [Edge Detect](plugins/edge-detect/) | Effect | Sobel edges as outlines, scan-line stripes or neon |
 | [Teletext](plugins/teletext/) | Effect | Ceefax-style mosaic blocks in the eight teletext colours |
 | [Mosaic Tiles](plugins/mosaic-tiles/) | Effect | Grid of tiles flipping between the image and a solid colour |
+| [Datamosh](plugins/datamosh/) | Effect | Fake codec datamosh: old frames smeared along the clip's block motion |
 
 ## Install
 

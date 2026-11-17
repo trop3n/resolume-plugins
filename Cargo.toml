@@ -5,6 +5,7 @@ members = [
     "crates/ffgl-fx",
     "plugins/ascii",
     "plugins/cctv",
+    "plugins/datamosh",
     "plugins/dither",
     "plugins/dot-matrix",
     "plugins/edge-detect",

@@ -107,15 +107,24 @@ pub fn fragment_source(def: &EffectDef, pass: usize) -> String {
     for p in def.params {
         src.push_str(&format!("uniform {} {};\n", p.glsl_type(), p.ident));
     }
+    for name in def.buffers() {
+        src.push_str(&format!("uniform sampler2D {name};   // persistent buffer\n"));
+    }
     src.push_str("#line 1\n");
     src.push_str(def.passes[pass].shader);
     src
+}
+
+/// Texture unit of persistent buffer `b` (0 is the input, 1 is `passIn`).
+const fn buffer_unit(b: usize) -> u32 {
+    2 + b as u32
 }
 
 struct Program {
     program: glow::Program,
     builtins: Vec<Option<glow::UniformLocation>>,
     params: Vec<Option<glow::UniformLocation>>,
+    buffers: Vec<Option<glow::UniformLocation>>,
 }
 
 struct Target {
@@ -127,8 +136,18 @@ struct GlState {
     gl: glow::Context,
     vao: glow::VertexArray,
     programs: Vec<Program>,
+    /// Ping-pong pair (0, 1), then a front/back pair per persistent buffer.
     targets: Vec<Target>,
     target_size: (u32, u32),
+    /// Which of its two targets holds each buffer's latest contents.
+    buffer_front: Vec<usize>,
+}
+
+impl GlState {
+    fn buffer_target(&self, b: usize, front: bool) -> &Target {
+        let which = if front { self.buffer_front[b] } else { 1 - self.buffer_front[b] };
+        &self.targets[2 + 2 * b + which]
+    }
 }
 
 pub struct Instance {
@@ -217,10 +236,11 @@ impl Instance {
         let host_fbo = current_framebuffer(&gl);
         let result = build_programs(&gl, self.def);
         let vp = self.viewport;
-        reset_to_host_defaults(&gl, host_fbo, vp);
+        reset_to_host_defaults(&gl, host_fbo, vp, 0);
         let programs = result?;
         let vao = gl.create_vertex_array()?;
-        self.gl = Some(GlState { gl, vao, programs, targets: Vec::new(), target_size: (0, 0) });
+        let buffer_front = vec![0; self.def.buffers().len()];
+        self.gl = Some(GlState { gl, vao, programs, targets: Vec::new(), target_size: (0, 0), buffer_front });
         Ok(())
     }
 
@@ -240,25 +260,34 @@ impl Instance {
         };
         let host_fbo = NonZeroU32::new(host_fbo).map(glow::NativeFramebuffer);
         let (w, h) = (vp.width.max(1), vp.height.max(1));
+        let buffers = def.buffers();
+        let units = buffer_unit(buffers.len());
         if def.passes.len() > 1 && !state.ensure_targets(w, h) {
             crate::log("could not create intermediate render targets");
-            reset_to_host_defaults(&state.gl, host_fbo, vp);
+            reset_to_host_defaults(&state.gl, host_fbo, vp, units);
             return false;
         }
+        // Which buffer, if any, each pass stores into.
+        let stores: Vec<Option<usize>> =
+            def.passes.iter().map(|p| p.store.map(|n| buffers.iter().position(|b| *b == n).expect("listed"))).collect();
 
-        let gl = &state.gl;
         let ratio = |used: u32, full: u32| if full == 0 { 1.0 } else { used as f32 / full as f32 };
         let max_uv = [ratio(input.Width, input.HardwareWidth), ratio(input.Height, input.HardwareHeight)];
         let input_tex = NonZeroU32::new(input.Handle).map(glow::NativeTexture);
 
-        gl.bind_vertex_array(Some(state.vao));
-        gl.active_texture(glow::TEXTURE0);
-        gl.bind_texture(glow::TEXTURE_2D, input_tex);
+        state.gl.bind_vertex_array(Some(state.vao));
+        state.gl.active_texture(glow::TEXTURE0);
+        state.gl.bind_texture(glow::TEXTURE_2D, input_tex);
 
         let last = def.passes.len() - 1;
         let (mut read, mut write) = (1, 0);
-        for (pi, prog) in state.programs.iter().enumerate() {
+        for pi in 0..state.programs.len() {
+            let gl = &state.gl;
+            let prog = &state.programs[pi];
             gl.use_program(Some(prog.program));
+            for (bi, loc) in prog.buffers.iter().enumerate() {
+                gl.uniform_1_i32(loc.as_ref(), buffer_unit(bi) as i32);
+            }
             let b = &prog.builtins;
             gl.uniform_1_i32(b[0].as_ref(), 0);
             gl.uniform_1_i32(b[1].as_ref(), 1);
@@ -278,25 +307,37 @@ impl Instance {
             }
 
             for it in 0..iterations[pi] {
-                gl.uniform_1_i32(b[7].as_ref(), it as i32);
+                let gl = &state.gl;
+                gl.uniform_1_i32(state.programs[pi].builtins[7].as_ref(), it as i32);
                 if pi == last {
                     gl.bind_framebuffer(glow::FRAMEBUFFER, host_fbo);
                     gl.viewport(vp.x as i32, vp.y as i32, vp.width as i32, vp.height as i32);
                 } else {
-                    gl.bind_framebuffer(glow::FRAMEBUFFER, Some(state.targets[write].fbo));
+                    let target = match stores[pi] {
+                        Some(bi) => state.buffer_target(bi, false),
+                        None => &state.targets[write],
+                    };
+                    gl.bind_framebuffer(glow::FRAMEBUFFER, Some(target.fbo));
                     gl.viewport(0, 0, w as i32, h as i32);
                 }
                 gl.active_texture(glow::TEXTURE1);
                 gl.bind_texture(glow::TEXTURE_2D, state.targets.get(read).map(|t| t.texture));
+                for bi in 0..buffers.len() {
+                    gl.active_texture(glow::TEXTURE0 + buffer_unit(bi));
+                    gl.bind_texture(glow::TEXTURE_2D, Some(state.buffer_target(bi, true).texture));
+                }
                 gl.active_texture(glow::TEXTURE0);
                 gl.draw_arrays(glow::TRIANGLES, 0, 3);
-                if pi != last {
-                    std::mem::swap(&mut read, &mut write);
+                match stores[pi] {
+                    // The back target now holds the newest contents.
+                    Some(bi) => state.buffer_front[bi] ^= 1,
+                    None if pi != last => std::mem::swap(&mut read, &mut write),
+                    None => {}
                 }
             }
         }
 
-        reset_to_host_defaults(gl, host_fbo, vp);
+        reset_to_host_defaults(&state.gl, host_fbo, vp, units);
         true
     }
 
@@ -312,20 +353,25 @@ impl Instance {
                 state.gl.delete_program(p.program);
             }
             state.gl.delete_vertex_array(state.vao);
-            reset_to_host_defaults(&state.gl, host_fbo, self.viewport);
+            let units = buffer_unit(state.buffer_front.len());
+            reset_to_host_defaults(&state.gl, host_fbo, self.viewport, units);
         }
     }
 }
 
 impl GlState {
-    /// Make sure both ping-pong targets exist at `w`x`h`. Leaves FBO bindings changed.
+    /// Make sure the ping-pong pair and every buffer's pair exist at
+    /// `w`x`h`. Recreated targets start transparent black. Leaves FBO
+    /// bindings changed.
     unsafe fn ensure_targets(&mut self, w: u32, h: u32) -> bool {
-        if self.targets.len() == 2 && self.target_size == (w, h) {
+        let count = 2 + 2 * self.buffer_front.len();
+        if self.targets.len() == count && self.target_size == (w, h) {
             return true;
         }
         self.delete_targets();
+        self.buffer_front.iter_mut().for_each(|f| *f = 0);
         let gl = &self.gl;
-        for _ in 0..2 {
+        for _ in 0..count {
             let (Ok(texture), Ok(fbo)) = (gl.create_texture(), gl.create_framebuffer()) else {
                 return false;
             };
@@ -406,6 +452,7 @@ unsafe fn build_programs(gl: &glow::Context, def: &EffectDef) -> Result<Vec<Prog
             program,
             builtins: BUILTINS.iter().map(|n| gl.get_uniform_location(program, n)).collect(),
             params: def.params.iter().map(|p| gl.get_uniform_location(program, p.ident)).collect(),
+            buffers: def.buffers().iter().map(|n| gl.get_uniform_location(program, n)).collect(),
         });
     }
     gl.delete_shader(vs);
@@ -427,14 +474,15 @@ unsafe fn current_framebuffer(gl: &glow::Context) -> Option<glow::Framebuffer> {
 /// FFGL hosts expect plugins to hand back a context with no program,
 /// buffers or textures bound (see `ValidateContextState` in the SDK), and
 /// with the host's framebuffer and viewport still set.
-unsafe fn reset_to_host_defaults(gl: &glow::Context, host_fbo: Option<glow::Framebuffer>, vp: FFGLViewportStruct) {
+/// `units` is how many texture units the effect used (at least 4 are reset).
+unsafe fn reset_to_host_defaults(gl: &glow::Context, host_fbo: Option<glow::Framebuffer>, vp: FFGLViewportStruct, units: u32) {
     gl.bind_framebuffer(glow::FRAMEBUFFER, host_fbo);
     gl.viewport(vp.x as i32, vp.y as i32, vp.width as i32, vp.height as i32);
     gl.use_program(None);
     gl.bind_vertex_array(None);
     gl.bind_buffer(glow::ARRAY_BUFFER, None);
     gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, None);
-    for unit in 0..4 {
+    for unit in 0..units.max(4) {
         gl.active_texture(glow::TEXTURE0 + unit);
         gl.bind_texture(glow::TEXTURE_2D, None);
     }

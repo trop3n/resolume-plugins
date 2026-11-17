@@ -18,6 +18,7 @@
 //! | `FRAMEINDEX`, `PASSINDEX`, `ITERATION` | `int` | counters |
 //! | `pixelCoord()` | `ivec2` | integer pixel, same in every pass |
 //! | `sizeScale()` | `float` | multiply sizes given in pixels at 1080p by this |
+//! | *buffer name* | `sampler2D` | a persistent buffer (see [`Pass::store`]) |
 //!
 //! Helpers also in the prelude: `hash12`, `hash22`, `valueNoise`, `fbm`
 //! (0..1), `luma` (Rec. 709), `rgb2hsv`, `hsv2rgb`, and `bayer2/4/8`
@@ -50,20 +51,31 @@ pub struct Pass {
     /// pass runs `ceil(value / steps_per_run)` times; the shader gets the
     /// run number in `ITERATION` and works out which steps are its own.
     pub steps_per_run: u32,
+    /// Render into the persistent buffer of this name instead of the
+    /// ping-pong chain. Every pass can sample the buffer as a `sampler2D` of
+    /// that name; it keeps its contents across frames, so a pass sees the
+    /// last value written, which may be from the previous frame. Buffers
+    /// start out transparent black and are cleared when the size changes.
+    pub store: Option<&'static str>,
 }
 
 impl Pass {
     pub const fn new(shader: &'static str) -> Self {
-        Self { shader, repeat: None, steps_per_run: 1 }
+        Self { shader, repeat: None, steps_per_run: 1, store: None }
     }
 
     pub const fn repeated(shader: &'static str, ident: &'static str) -> Self {
-        Self { shader, repeat: Some(ident), steps_per_run: 1 }
+        Self { shader, repeat: Some(ident), steps_per_run: 1, store: None }
     }
 
     /// Repeated pass where each run does `steps_per_run` steps.
     pub const fn repeated_by(shader: &'static str, ident: &'static str, steps_per_run: u32) -> Self {
-        Self { shader, repeat: Some(ident), steps_per_run }
+        Self { shader, repeat: Some(ident), steps_per_run, store: None }
+    }
+
+    /// Write this pass into the persistent buffer `name` (see [`Pass::store`]).
+    pub const fn storing(self, name: &'static str) -> Self {
+        Self { store: Some(name), ..self }
     }
 }
 
@@ -142,6 +154,17 @@ impl EffectDef {
         self.statics().first_host[param]
     }
 
+    /// Persistent buffer names, in order of first use.
+    pub fn buffers(&self) -> Vec<&'static str> {
+        let mut names = Vec::new();
+        for name in self.passes.iter().filter_map(|p| p.store) {
+            if !names.contains(&name) {
+                names.push(name);
+            }
+        }
+        names
+    }
+
     /// Check the definition for mistakes the compiler can't catch. Plugins
     /// call this from a test.
     pub fn validate(&self) -> Result<(), String> {
@@ -155,7 +178,16 @@ impl EffectDef {
         match self.passes.last() {
             None => errors.push("needs at least one pass".to_owned()),
             Some(p) if p.repeat.is_some() => errors.push("the last pass can't repeat".to_owned()),
+            Some(p) if p.store.is_some() => errors.push("the last pass can't store into a buffer".to_owned()),
             _ => {}
+        }
+        for name in self.buffers() {
+            let valid = name.chars().next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+                && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+                && !name.starts_with("gl_");
+            if !valid || instance::BUILTINS.contains(&name) || self.params.iter().any(|p| p.ident == name) {
+                errors.push(format!("buffer name {name:?} isn't a free GLSL name"));
+            }
         }
         for (i, p) in self.params.iter().enumerate() {
             let valid_ident = p.ident.chars().next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
@@ -489,7 +521,7 @@ mod tests {
         ],
         passes: &[
             Pass::repeated("void main(){}", "steps"),
-            Pass::repeated_by("void main(){}", "steps", 3),
+            Pass::repeated_by("void main(){}", "steps", 3).storing("history"),
             Pass::new("void main(){ fragColor = vec4(tint * amount, float(mode)); }"),
         ],
         cache: Cache::new(),
@@ -530,11 +562,11 @@ mod tests {
                 Param::bool("Y", "y", "", false),
                 Param::bool("Y2", "y", "", false),
             ],
-            passes: &[Pass::repeated("", "y")],
+            passes: &[Pass::new("").storing("y"), Pass::repeated("", "y")],
             cache: Cache::new(),
         };
         let err = BAD.validate().unwrap_err();
-        for needle in ["name", "id", "last pass", "TIME", "bad range", "used twice", "isn't an Int", "isn't used"] {
+        for needle in ["name", "id", "last pass", "TIME", "bad range", "used twice", "isn't an Int", "isn't used", "buffer name \"y\""] {
             assert!(err.contains(needle), "missing {needle:?} in:\n{err}");
         }
     }
@@ -639,8 +671,25 @@ mod tests {
     #[test]
     fn fragment_source_declares_params() {
         let src = fragment_source(&TEST_FX, 0);
-        for line in ["uniform float amount;", "uniform int mode;", "uniform int steps;", "uniform vec3 tint;", "#line 1"] {
+        for line in ["uniform float amount;", "uniform int mode;", "uniform int steps;", "uniform vec3 tint;", "uniform sampler2D history;", "#line 1"] {
             assert!(src.contains(line), "{line}");
         }
+    }
+
+    #[test]
+    fn buffers_are_listed_once_and_last_pass_cannot_store() {
+        assert_eq!(TEST_FX.buffers(), vec!["history"]);
+        static LAST_STORES: EffectDef = EffectDef {
+            id: *b"LsSt",
+            name: "Last Stores",
+            short_name: c"Last",
+            description: c"",
+            about: c"",
+            version: (0, 1),
+            params: &[],
+            passes: &[Pass::new("").storing("buf")],
+            cache: Cache::new(),
+        };
+        assert!(LAST_STORES.validate().unwrap_err().contains("can't store"));
     }
 }
