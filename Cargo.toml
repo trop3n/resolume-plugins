@@ -6,6 +6,7 @@ members = [
     "plugins/ascii",
     "plugins/cctv",
     "plugins/datamosh",
+    "plugins/depth-map",
     "plugins/dither",
     "plugins/dot-matrix",
     "plugins/edge-detect",

@@ -364,6 +364,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "depth-map"
+version = "0.1.0"
+dependencies = [
+ "ffgl-fx",
+]
+
+[[package]]
 name = "dither"
 version = "0.1.0"
 dependencies = [

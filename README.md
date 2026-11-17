@@ -25,6 +25,7 @@ Intel).
 | [Teletext](plugins/teletext/) | Effect | Ceefax-style mosaic blocks in the eight teletext colours |
 | [Mosaic Tiles](plugins/mosaic-tiles/) | Effect | Grid of tiles flipping between the image and a solid colour |
 | [Datamosh](plugins/datamosh/) | Effect | Fake codec datamosh: old frames smeared along the clip's block motion |
+| [Depth Map](plugins/depth-map/) | Effect | Fake depth camera for a fixed shot: learned background, people pushed near |
 
 ## Install
 
