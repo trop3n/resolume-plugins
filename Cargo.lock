@@ -430,6 +430,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ffgl-fx"
+version = "0.1.0"
+dependencies = [
+ "glow",
+ "windows-sys",
+]
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -526,6 +534,16 @@ dependencies = [
  "futures-task",
  "pin-project-lite",
  "slab",
+]
+
+[[package]]
+name = "fx-host"
+version = "0.1.0"
+dependencies = [
+ "glow",
+ "image",
+ "libloading",
+ "windows-sys",
 ]
 
 [[package]]
@@ -1057,6 +1075,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 
 [[package]]
+name = "pixel-sort"
+version = "0.1.0"
+dependencies = [
+ "ffgl-fx",
+]
+
+[[package]]
 name = "png"
 version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1306,6 +1331,13 @@ name = "rgb"
 version = "0.8.53"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47b34b781b31e5d73e9fbc8689c70551fd1ade9a19e3e28cfec8580a79290cc4"
+
+[[package]]
+name = "risograph"
+version = "0.1.0"
+dependencies = [
+ "ffgl-fx",
+]
 
 [[package]]
 name = "roxmltree"

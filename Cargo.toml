@@ -2,7 +2,11 @@
 resolver = "2"
 # One folder per plugin. Add new plugins here.
 members = [
+    "crates/ffgl-fx",
+    "plugins/pixel-sort",
+    "plugins/risograph",
     "plugins/rusci-scope",
+    "tools/fx-host",
 ]
 
 # Windows cargo can't create incremental-compilation lock files on a WSL

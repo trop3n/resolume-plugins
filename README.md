@@ -7,6 +7,8 @@ Intel).
 | Plugin | Type | What it does |
 |--------|------|--------------|
 | [Rusci Scope](plugins/rusci-scope/) | Source | Oscilloscope-style vector graphics (shapes, SVGs) using [rusci-render](https://github.com/trop3n/rusci-render) |
+| [Risograph](plugins/risograph/) | Effect | Two-ink riso print: separation, grain or halftone screen, misregistration, paper |
+| [Pixel Sort](plugins/pixel-sort/) | Effect | GPU pixel sorting along rows or columns inside a brightness mask |
 
 ## Install
 
@@ -44,6 +46,8 @@ plugins/<name>/            one Rust crate per plugin
   Cargo.toml               sets [package.metadata.resolume] file-name
   packaging/macos/         Info.plist (with @VERSION@) and INSTALL.txt
   examples/ffgl_host.rs    optional test host; CI runs it on macOS if present
+crates/ffgl-fx/             shared FFGL plumbing for the GLSL effect plugins
+tools/fx-host/             test host: renders a PNG through an effect plugin
 scripts/bundle-macos.sh    builds a plugin's universal macOS bundle
 install.ps1                builds and installs plugins on Windows
 .github/workflows/ci.yml   clippy, tests and builds for each plugin
@@ -61,6 +65,26 @@ install.ps1                builds and installs plugins on Windows
    and change the names and bundle ID).
 4. Add `"plugins/<name>"` to `members` in the root `Cargo.toml`, and `<name>`
    to both `plugin:` lists in `.github/workflows/ci.yml`.
+
+### Shader effects
+
+Effects that are GLSL shaders (Risograph, Pixel Sort) don't write any FFGL
+code. They depend on `crates/ffgl-fx`, declare a `static EffectDef` with
+their parameters and shader passes, and call `ffgl_fx::export_effect!`.
+Each parameter becomes a GLSL uniform; passes can run several times a frame
+and read the previous pass through `passIn`. See the docs at the top of
+`crates/ffgl-fx/src/lib.rs`, and `plugins/risograph/` for a one-pass example.
+
+To check one on a GPU without Resolume (Windows or macOS):
+
+```sh
+cargo build --release -p risograph -p fx-host
+target/release/fx-host target/release/risograph.dll input.png out.png Screen=Halftone "Offset X=0.7"
+```
+
+It loads the plugin, checks the GL state after every call the way the FFGL
+SDK does, prints the frame time and saves the output. Slider values are
+what Resolume sends (0..1); options can be given by name.
 
 ## License
 

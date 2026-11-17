@@ -16,7 +16,7 @@ jobs:
       fail-fast: false
       matrix:
         # Folders under plugins/. Add new plugins here and in the macOS job.
-        plugin: [rusci-scope]
+        plugin: [rusci-scope, risograph, pixel-sort]
     defaults:
       run:
         shell: bash
@@ -43,6 +43,9 @@ jobs:
       - name: Test
         run: cargo test -p "$PACKAGE"
 
+      - name: Test shared crate
+        run: cargo test -p ffgl-fx
+
       - name: Build plugin
         run: cargo build --release --lib -p "$PACKAGE"
 
@@ -65,7 +68,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        plugin: [rusci-scope]
+        plugin: [rusci-scope, risograph, pixel-sort]
     steps:
       - uses: actions/checkout@v5
 
