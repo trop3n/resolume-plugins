@@ -1,0 +1,19 @@
+[package]
+name = "data-prism"
+description = "Data Prism: FUI-style HUD overlay (brackets, lock frame, measure arcs, labels, circle chain, anchors) around a box you place on screen (FFGL effect for Resolume)"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-only"
+publish = false
+
+# Used by scripts/bundle-macos.sh and install.ps1 at the repo root.
+[package.metadata.resolume]
+# Installed file name: DataPrism.dll / DataPrism.bundle
+file-name = "DataPrism"
+
+[lib]
+name = "data_prism"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+ffgl-fx = { path = "../../crates/ffgl-fx" }

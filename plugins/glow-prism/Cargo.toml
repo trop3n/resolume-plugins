@@ -1,0 +1,19 @@
+[package]
+name = "glow-prism"
+description = "Glow Prism: Bright parts of the video bloom into a soft glow (FFGL effect for Resolume)"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-only"
+publish = false
+
+# Used by scripts/bundle-macos.sh and install.ps1 at the repo root.
+[package.metadata.resolume]
+# Installed file name: GlowPrism.dll / GlowPrism.bundle
+file-name = "GlowPrism"
+
+[lib]
+name = "glow_prism"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+ffgl-fx = { path = "../../crates/ffgl-fx" }
