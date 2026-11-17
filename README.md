@@ -9,6 +9,16 @@ Intel).
 | [Rusci Scope](plugins/rusci-scope/) | Source | Oscilloscope-style vector graphics (shapes, SVGs) using [rusci-render](https://github.com/trop3n/rusci-render) |
 | [Risograph](plugins/risograph/) | Effect | Two-ink riso print: separation, grain or halftone screen, misregistration, paper |
 | [Pixel Sort](plugins/pixel-sort/) | Effect | GPU pixel sorting along rows or columns inside a brightness mask |
+| [Threshold](plugins/threshold/) | Effect | Hard two-colour cut at a brightness level, with photocopy grit |
+| [Posterize](plugins/posterize/) | Effect | Few tone levels, on a three-colour gradient or per channel |
+| [Solarize](plugins/solarize/) | Effect | Tones past a threshold fold back, in rainbow, colour or mono |
+| [Halftone](plugins/halftone/) | Effect | Rotated halftone screen of dots, lines or squares, mono or CMYK |
+| [Dither](plugins/dither/) | Effect | Bayer or noise dithering to a few levels at a chosen pixel size |
+| [Dot Matrix](plugins/dot-matrix/) | Effect | Grid of dots sized by brightness, printer or LED style |
+| [X-Ray](plugins/x-ray/) | Effect | Inverted, high-contrast x-ray with glowing edges, grain and scan lines |
+| [Night Vision](plugins/night-vision/) | Effect | Amplified green phosphor image with noise, bloom and vignette |
+| [Thermal](plugins/thermal/) | Effect | Thermal-camera false colour: iron, rainbow, white hot or black hot |
+| [Retro LCD](plugins/retro-lcd/) | Effect | Low-res two-tone phone LCD with dither and a pixel grid |
 
 ## Install
 
@@ -68,7 +78,7 @@ install.ps1                builds and installs plugins on Windows
 
 ### Shader effects
 
-Effects that are GLSL shaders (Risograph, Pixel Sort) don't write any FFGL
+Effects that are GLSL shaders (everything except Rusci Scope) don't write any FFGL
 code. They depend on `crates/ffgl-fx`, declare a `static EffectDef` with
 their parameters and shader passes, and call `ffgl_fx::export_effect!`.
 Each parameter becomes a GLSL uniform; passes can run several times a frame

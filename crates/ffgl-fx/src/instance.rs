@@ -51,6 +51,54 @@ vec4 FETCH_PASS(ivec2 p) { return texelFetch(passIn, clamp(p, ivec2(0), ivec2(RE
 // Pixel coordinate that is the same in every pass (gl_FragCoord is offset
 // by the host viewport in the last pass).
 ivec2 pixelCoord() { return ivec2(uv * RENDERSIZE); }
+// Multiply sizes given in pixels at 1080p by this to keep looks resolution-independent.
+float sizeScale() { return RENDERSIZE.y / 1080.0; }
+
+// ── Helpers ──
+float hash12(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+}
+vec2 hash22(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.xx + p3.yz) * p3.zy);
+}
+float valueNoise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash12(i), hash12(i + vec2(1, 0)), f.x),
+               mix(hash12(i + vec2(0, 1)), hash12(i + vec2(1, 1)), f.x), f.y);
+}
+// Four octaves of value noise, 0..1.
+float fbm(vec2 p) {
+    float sum = 0.0;
+    float amp = 0.5;
+    for (int i = 0; i < 4; i++) {
+        sum += amp * valueNoise(p);
+        p = p * 2.03 + 17.1;
+        amp *= 0.5;
+    }
+    return sum / 0.9375;
+}
+float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
+vec3 rgb2hsv(vec3 c) {
+    vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
+    vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+    vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
+    float d = q.x - min(q.w, q.y);
+    return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + 1e-10)), d / (q.x + 1e-10), q.x);
+}
+vec3 hsv2rgb(vec3 c) {
+    vec3 p = abs(fract(c.xxx + vec3(1.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0);
+    return c.z * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), c.y);
+}
+// Ordered-dither thresholds in [0, 1) for integer cell coordinates.
+float bayer2(vec2 a) { a = floor(a); return fract(a.x / 2.0 + a.y * a.y * 0.75); }
+float bayer4(vec2 a) { return bayer2(0.5 * a) * 0.25 + bayer2(a); }
+float bayer8(vec2 a) { return bayer4(0.5 * a) * 0.25 + bayer2(a); }
 ";
 
 /// Full fragment shader source for one pass: prelude, param uniforms, body.

@@ -343,6 +343,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be1e0bca6c3637f992fc1cc7cbc52a78c1ef6db076dbf1059c4323d6a2048376"
 
 [[package]]
+name = "dither"
+version = "0.1.0"
+dependencies = [
+ "ffgl-fx",
+]
+
+[[package]]
+name = "dot-matrix"
+version = "0.1.0"
+dependencies = [
+ "ffgl-fx",
+]
+
+[[package]]
 name = "either"
 version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -616,6 +630,13 @@ dependencies = [
  "cfg-if",
  "crunchy",
  "zerocopy",
+]
+
+[[package]]
+name = "halftone"
+version = "0.1.0"
+dependencies = [
+ "ffgl-fx",
 ]
 
 [[package]]
@@ -901,6 +922,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
 
 [[package]]
+name = "night-vision"
+version = "0.1.0"
+dependencies = [
+ "ffgl-fx",
+]
+
+[[package]]
 name = "no_std_io2"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1092,6 +1120,13 @@ dependencies = [
  "fdeflate",
  "flate2",
  "miniz_oxide 0.8.9",
+]
+
+[[package]]
+name = "posterize"
+version = "0.1.0"
+dependencies = [
+ "ffgl-fx",
 ]
 
 [[package]]
@@ -1327,6 +1362,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "03251193000f4bd3b042892be858ee50e8b3719f2b08e5833ac4353724632430"
 
 [[package]]
+name = "retro-lcd"
+version = "0.1.0"
+dependencies = [
+ "ffgl-fx",
+]
+
+[[package]]
 name = "rgb"
 version = "0.8.53"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1533,6 +1575,13 @@ name = "smallvec"
 version = "1.16.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0d5d4b1981b8bbbb7aed204cae5726d683d5d6ac7e74ec54122ea28f315e7c8"
+
+[[package]]
+name = "solarize"
+version = "0.1.0"
+dependencies = [
+ "ffgl-fx",
+]
 
 [[package]]
 name = "stable_deref_trait"
@@ -1797,6 +1846,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "thermal"
+version = "0.1.0"
+dependencies = [
+ "ffgl-fx",
+]
+
+[[package]]
 name = "thiserror"
 version = "2.0.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1814,6 +1870,13 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.9",
+]
+
+[[package]]
+name = "threshold"
+version = "0.1.0"
+dependencies = [
+ "ffgl-fx",
 ]
 
 [[package]]
@@ -2141,6 +2204,13 @@ name = "wit-bindgen"
 version = "0.57.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
+
+[[package]]
+name = "x-ray"
+version = "0.1.0"
+dependencies = [
+ "ffgl-fx",
+]
 
 [[package]]
 name = "xmlwriter"

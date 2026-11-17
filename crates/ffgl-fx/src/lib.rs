@@ -17,6 +17,13 @@
 //! | `TIME` | `float` | seconds |
 //! | `FRAMEINDEX`, `PASSINDEX`, `ITERATION` | `int` | counters |
 //! | `pixelCoord()` | `ivec2` | integer pixel, same in every pass |
+//! | `sizeScale()` | `float` | multiply sizes given in pixels at 1080p by this |
+//!
+//! Helpers also in the prelude: `hash12`, `hash22`, `valueNoise`, `fbm`
+//! (0..1), `luma` (Rec. 709), `rgb2hsv`, `hsv2rgb`, and `bayer2/4/8`
+//! (ordered-dither thresholds for integer cell coordinates).
+//!
+//! Plugins add `ffgl_fx::effect_tests!(EFFECT);` for the standard checks.
 
 pub mod ffi;
 mod gl_loader;
@@ -171,6 +178,13 @@ impl EffectDef {
                 errors.push(format!("param {:?}: bad range or default", p.name));
             }
         }
+        for p in self.params {
+            let used = self.passes.iter().any(|pass| uses_ident(pass.shader, p.ident))
+                || self.passes.iter().any(|pass| pass.repeat == Some(p.ident));
+            if !used {
+                errors.push(format!("param {:?} ({}) isn't used by any pass", p.name, p.ident));
+            }
+        }
         for (i, pass) in self.passes.iter().enumerate() {
             if pass.steps_per_run == 0 {
                 errors.push(format!("pass {i}: steps_per_run must be at least 1"));
@@ -187,6 +201,35 @@ impl EffectDef {
             Err(errors.join("\n"))
         }
     }
+}
+
+/// True if `ident` appears in `src` as a whole word.
+fn uses_ident(src: &str, ident: &str) -> bool {
+    let word = |c: char| c.is_ascii_alphanumeric() || c == '_';
+    src.match_indices(ident).any(|(i, _)| {
+        let before = src[..i].chars().next_back();
+        let after = src[i + ident.len()..].chars().next();
+        !before.is_some_and(word) && !after.is_some_and(word)
+    })
+}
+
+/// Standard tests for a plugin: `ffgl_fx::effect_tests!(EFFECT);`
+#[macro_export]
+macro_rules! effect_tests {
+    ($def:path) => {
+        #[cfg(test)]
+        mod effect_tests {
+            #[allow(unused_imports)]
+            use super::*;
+
+            #[test]
+            fn definition_is_valid() {
+                if let Err(e) = $def.validate() {
+                    panic!("{e}");
+                }
+            }
+        }
+    };
 }
 
 /// Export `plugMain` and `SetLogCallback` for a `static` [`EffectDef`].
@@ -444,7 +487,11 @@ mod tests {
             Param::int("Steps", "steps", "Main", 0, 10, 4),
             Param::colour("Tint", "tint", "Colour", [1.0, 0.5, 0.0]),
         ],
-        passes: &[Pass::repeated("void main(){}", "steps"), Pass::repeated_by("void main(){}", "steps", 3), Pass::new("void main(){}")],
+        passes: &[
+            Pass::repeated("void main(){}", "steps"),
+            Pass::repeated_by("void main(){}", "steps", 3),
+            Pass::new("void main(){ fragColor = vec4(tint * amount, float(mode)); }"),
+        ],
         cache: Cache::new(),
     };
 
@@ -487,7 +534,7 @@ mod tests {
             cache: Cache::new(),
         };
         let err = BAD.validate().unwrap_err();
-        for needle in ["name", "id", "last pass", "TIME", "bad range", "used twice", "isn't an Int"] {
+        for needle in ["name", "id", "last pass", "TIME", "bad range", "used twice", "isn't an Int", "isn't used"] {
             assert!(err.contains(needle), "missing {needle:?} in:\n{err}");
         }
     }
@@ -580,6 +627,13 @@ mod tests {
         assert_eq!(call(FF_PROCESS_OPENGL, FFMixed::ptr(&gl), inst).as_u32(), FF_FAIL);
         free(inst);
         assert_eq!(call(FF_PROCESS_OPENGL, FFMixed::ptr(&gl), std::ptr::null_mut()).as_u32(), FF_FAIL);
+    }
+
+    #[test]
+    fn ident_matching_is_whole_word() {
+        assert!(uses_ident("x = amount * 2.0;", "amount"));
+        assert!(!uses_ident("x = amountB + myamount;", "amount"));
+        assert!(uses_ident("f(amount)", "amount"));
     }
 
     #[test]

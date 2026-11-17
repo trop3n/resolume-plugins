@@ -1,0 +1,19 @@
+[package]
+name = "posterize"
+description = "Posterize: Few tone levels, on a three-colour gradient or per channel (FFGL effect for Resolume)"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-only"
+publish = false
+
+# Used by scripts/bundle-macos.sh and install.ps1 at the repo root.
+[package.metadata.resolume]
+# Installed file name: Posterize.dll / Posterize.bundle
+file-name = "Posterize"
+
+[lib]
+name = "posterize"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+ffgl-fx = { path = "../../crates/ffgl-fx" }

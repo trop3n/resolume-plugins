@@ -27,37 +27,6 @@ const vec3 PAPERS[5] = vec3[5](
     vec3(0.835, 0.835, 0.820)   // Grey
 );
 
-float hash12(vec2 p) {
-    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
-    p3 += dot(p3, p3.yzx + 33.33);
-    return fract((p3.x + p3.y) * p3.z);
-}
-
-vec2 hash22(vec2 p) {
-    vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
-    p3 += dot(p3, p3.yzx + 33.33);
-    return fract((p3.xx + p3.yz) * p3.zy);
-}
-
-float valueNoise(vec2 p) {
-    vec2 i = floor(p);
-    vec2 f = fract(p);
-    f = f * f * (3.0 - 2.0 * f);
-    return mix(mix(hash12(i), hash12(i + vec2(1, 0)), f.x),
-               mix(hash12(i + vec2(0, 1)), hash12(i + vec2(1, 1)), f.x), f.y);
-}
-
-float fbm(vec2 p) {
-    float sum = 0.0;
-    float amp = 0.5;
-    for (int i = 0; i < 4; i++) {
-        sum += amp * valueNoise(p);
-        p = p * 2.03 + 17.1;
-        amp *= 0.5;
-    }
-    return sum / 0.9375;
-}
-
 vec3 graded(vec2 p) {
     vec3 c = IMG_INPUT(p).rgb;
     c = (c - 0.5) * contrast + 0.5 + brightness;
