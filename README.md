@@ -19,6 +19,11 @@ Intel).
 | [Night Vision](plugins/night-vision/) | Effect | Amplified green phosphor image with noise, bloom and vignette |
 | [Thermal](plugins/thermal/) | Effect | Thermal-camera false colour: iron, rainbow, white hot or black hot |
 | [Retro LCD](plugins/retro-lcd/) | Effect | Low-res two-tone phone LCD with dither and a pixel grid |
+| [ASCII](plugins/ascii/) | Effect | Redraws the clip as text characters or shade blocks |
+| [CCTV](plugins/cctv/) | Effect | Cheap security camera: soft, tinted, noisy, with jitter, scan lines and a REC dot |
+| [Edge Detect](plugins/edge-detect/) | Effect | Sobel edges as outlines, scan-line stripes or neon |
+| [Teletext](plugins/teletext/) | Effect | Ceefax-style mosaic blocks in the eight teletext colours |
+| [Mosaic Tiles](plugins/mosaic-tiles/) | Effect | Grid of tiles flipping between the image and a solid colour |
 
 ## Install
 

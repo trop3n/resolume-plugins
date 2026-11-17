@@ -84,6 +84,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ascii"
+version = "0.1.0"
+dependencies = [
+ "ffgl-fx",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -213,6 +220,13 @@ dependencies = [
  "jobserver",
  "libc",
  "shlex",
+]
+
+[[package]]
+name = "cctv"
+version = "0.1.0"
+dependencies = [
+ "ffgl-fx",
 ]
 
 [[package]]
@@ -351,6 +365,13 @@ dependencies = [
 
 [[package]]
 name = "dot-matrix"
+version = "0.1.0"
+dependencies = [
+ "ffgl-fx",
+]
+
+[[package]]
+name = "edge-detect"
 version = "0.1.0"
 dependencies = [
  "ffgl-fx",
@@ -897,6 +918,13 @@ checksum = "b63fbc4a50860e98e7b2aa7804ded1db5cbc3aff9193adaff57a6931bf7c4b4c"
 dependencies = [
  "adler2",
  "simd-adler32",
+]
+
+[[package]]
+name = "mosaic-tiles"
+version = "0.1.0"
+dependencies = [
+ "ffgl-fx",
 ]
 
 [[package]]
@@ -1843,6 +1871,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8eab9a99a024a169fe8a903cf9d4a3b3601109bcc13bd9e3c6fff259138626c4"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "teletext"
+version = "0.1.0"
+dependencies = [
+ "ffgl-fx",
 ]
 
 [[package]]

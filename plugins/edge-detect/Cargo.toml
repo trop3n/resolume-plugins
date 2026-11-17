@@ -1,0 +1,19 @@
+[package]
+name = "edge-detect"
+description = "Edge Detect: Sobel edges as outlines, scan-line stripes or neon (FFGL effect for Resolume)"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-only"
+publish = false
+
+# Used by scripts/bundle-macos.sh and install.ps1 at the repo root.
+[package.metadata.resolume]
+# Installed file name: EdgeDetect.dll / EdgeDetect.bundle
+file-name = "EdgeDetect"
+
+[lib]
+name = "edge_detect"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+ffgl-fx = { path = "../../crates/ffgl-fx" }

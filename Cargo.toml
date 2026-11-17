@@ -3,9 +3,13 @@ resolver = "2"
 # One folder per plugin. Add new plugins here.
 members = [
     "crates/ffgl-fx",
+    "plugins/ascii",
+    "plugins/cctv",
     "plugins/dither",
     "plugins/dot-matrix",
+    "plugins/edge-detect",
     "plugins/halftone",
+    "plugins/mosaic-tiles",
     "plugins/night-vision",
     "plugins/pixel-sort",
     "plugins/posterize",
@@ -13,6 +17,7 @@ members = [
     "plugins/risograph",
     "plugins/rusci-scope",
     "plugins/solarize",
+    "plugins/teletext",
     "plugins/thermal",
     "plugins/threshold",
     "plugins/x-ray",
