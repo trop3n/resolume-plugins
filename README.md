@@ -26,6 +26,7 @@ Intel).
 | [Mosaic Tiles](plugins/mosaic-tiles/) | Effect | Grid of tiles flipping between the image and a solid colour |
 | [Datamosh](plugins/datamosh/) | Effect | Fake codec datamosh: old frames smeared along the clip's block motion |
 | [Depth Map](plugins/depth-map/) | Effect | Fake depth camera for a fixed shot: learned background, people pushed near |
+| [Tracking](plugins/tracking/) | Effect | Surveillance tracking HUD that follows whatever is moving |
 
 ## Install
 
