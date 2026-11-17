@@ -1,0 +1,17 @@
+[package]
+name = "ffgl-fx"
+description = "Shared FFGL plumbing for the shader effect plugins: ABI, parameters and a multi-pass GLSL runner"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-only"
+publish = false
+
+[dependencies]
+glow = "0.16"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_OpenGL",
+    "Win32_System_LibraryLoader",
+] }

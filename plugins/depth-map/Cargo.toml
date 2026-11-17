@@ -1,0 +1,19 @@
+[package]
+name = "depth-map"
+description = "Depth Map: Fake depth camera for a fixed shot: learned background, people pushed near (FFGL effect for Resolume)"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-only"
+publish = false
+
+# Used by scripts/bundle-macos.sh and install.ps1 at the repo root.
+[package.metadata.resolume]
+# Installed file name: DepthMap.dll / DepthMap.bundle
+file-name = "DepthMap"
+
+[lib]
+name = "depth_map"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+ffgl-fx = { path = "../../crates/ffgl-fx" }

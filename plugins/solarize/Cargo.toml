@@ -1,0 +1,19 @@
+[package]
+name = "solarize"
+description = "Solarize: Tones past a threshold fold back, in rainbow, colour or mono (FFGL effect for Resolume)"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-only"
+publish = false
+
+# Used by scripts/bundle-macos.sh and install.ps1 at the repo root.
+[package.metadata.resolume]
+# Installed file name: Solarize.dll / Solarize.bundle
+file-name = "Solarize"
+
+[lib]
+name = "solarize"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+ffgl-fx = { path = "../../crates/ffgl-fx" }
