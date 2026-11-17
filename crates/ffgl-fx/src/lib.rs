@@ -205,6 +205,7 @@ impl EffectDef {
                 Kind::Option { elements, default } => default < elements.len(),
                 Kind::Bool { .. } => true,
                 Kind::Colour { default } => default.iter().all(|c| (0.0..=1.0).contains(c)),
+                Kind::Point { default } => default.iter().all(|c| (0.0..=1.0).contains(c)),
             };
             if !ok {
                 errors.push(format!("param {:?}: bad range or default", p.name));

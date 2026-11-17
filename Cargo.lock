@@ -173,6 +173,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "blur-prism"
+version = "0.1.0"
+dependencies = [
+ "ffgl-fx",
+]
+
+[[package]]
 name = "built"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -351,6 +358,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
 
 [[package]]
+name = "data-prism"
+version = "0.1.0"
+dependencies = [
+ "ffgl-fx",
+]
+
+[[package]]
 name = "data-url"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -516,6 +530,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8bf7cc16383c4b8d58b9905a8509f02926ce3058053c056376248d958c9df1e8"
 
 [[package]]
+name = "fluid-prism"
+version = "0.1.0"
+dependencies = [
+ "ffgl-fx",
+]
+
+[[package]]
 name = "font-types"
 version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -645,6 +666,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8babf46d4c1c9d92deac9f7be466f76dfc4482b6452fc5024b5e8daf6ffeb3ee"
 
 [[package]]
+name = "glass-prism"
+version = "0.1.0"
+dependencies = [
+ "ffgl-fx",
+]
+
+[[package]]
 name = "glow"
 version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -654,6 +682,13 @@ dependencies = [
  "slotmap",
  "wasm-bindgen",
  "web-sys",
+]
+
+[[package]]
+name = "glow-prism"
+version = "0.1.0"
+dependencies = [
+ "ffgl-fx",
 ]
 
 [[package]]
@@ -1415,6 +1450,13 @@ name = "rgb"
 version = "0.8.53"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47b34b781b31e5d73e9fbc8689c70551fd1ade9a19e3e28cfec8580a79290cc4"
+
+[[package]]
+name = "ripple-prism"
+version = "0.1.0"
+dependencies = [
+ "ffgl-fx",
+]
 
 [[package]]
 name = "risograph"

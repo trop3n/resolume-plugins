@@ -20,6 +20,9 @@ pub enum Kind {
     Bool { default: bool },
     /// Colour picker (three host params: R, G, B). GLSL `vec3`.
     Colour { default: [f32; 3] },
+    /// Position in 0..1 (two host params of FFGL's X and Y position types,
+    /// like ffgl-isf's `point2D`). GLSL `vec2`.
+    Point { default: [f32; 2] },
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -60,12 +63,17 @@ impl Param {
         Self { name, ident, group, kind: Kind::Colour { default } }
     }
 
+    pub const fn point(name: &'static str, ident: &'static str, group: &'static str, default: [f32; 2]) -> Self {
+        Self { name, ident, group, kind: Kind::Point { default } }
+    }
+
     pub fn glsl_type(&self) -> &'static str {
         match self.kind {
             Kind::Float { .. } => "float",
             Kind::Int { .. } | Kind::Option { .. } => "int",
             Kind::Bool { .. } => "bool",
             Kind::Colour { .. } => "vec3",
+            Kind::Point { .. } => "vec2",
         }
     }
 }
@@ -76,7 +84,8 @@ pub enum HostKind {
     Int { min: i32, max: i32 },
     Option { elements: Vec<CString> },
     Bool,
-    /// One channel of a colour picker; Resolume groups consecutive R, G, B.
+    /// One 0..1 component of a multi-part control: a colour channel
+    /// (Resolume groups consecutive R, G, B) or a position axis (X, Y).
     Channel { ffgl_type: u32 },
 }
 
@@ -200,6 +209,17 @@ pub fn expand(params: &[Param]) -> (Vec<HostParam>, Vec<usize>) {
                     });
                 }
             }
+            Kind::Point { default } => {
+                let axes = [(format!("{} X", p.name), ffi::FF_TYPE_XPOS), (format!("{} Y", p.name), ffi::FF_TYPE_YPOS)];
+                for (i, (name, ffgl_type)) in axes.into_iter().enumerate() {
+                    host.push(HostParam {
+                        name: cstring(&name),
+                        group: group.clone(),
+                        kind: HostKind::Channel { ffgl_type },
+                        default: default[i],
+                    });
+                }
+            }
         }
     }
     (host, first)
@@ -215,14 +235,26 @@ mod tests {
         Param::option("Mode", "mode", "Main", &["A", "B", "C"], 2),
         Param::bool("Flip", "flip", "Main", true),
         Param::colour("Tint", "tint", "Colour", [0.1, 0.2, 0.3]),
+        Param::point("Center", "center", "Position", [0.25, 0.75]),
     ];
+
+    #[test]
+    fn point_expands_to_x_and_y_positions() {
+        let (host, first) = expand(PARAMS);
+        assert_eq!(first[5], 7);
+        assert_eq!(host.len(), 9);
+        assert_eq!(host[7].name.to_str().unwrap(), "Center X");
+        assert_eq!((host[7].ffgl_type(), host[8].ffgl_type()), (ffi::FF_TYPE_XPOS, ffi::FF_TYPE_YPOS));
+        assert_eq!((host[7].host_default(), host[8].host_default()), (0.25, 0.75));
+        assert_eq!(PARAMS[5].glsl_type(), "vec2");
+    }
 
     #[test]
     fn colour_expands_to_three_channels() {
         let (host, first) = expand(PARAMS);
-        assert_eq!(host.len(), 7);
-        assert_eq!(first, vec![0, 1, 2, 3, 4]);
-        let types: Vec<u32> = host[4..].iter().map(HostParam::ffgl_type).collect();
+        assert_eq!(host.len(), 9);
+        assert_eq!(first, vec![0, 1, 2, 3, 4, 7]);
+        let types: Vec<u32> = host[4..7].iter().map(HostParam::ffgl_type).collect();
         assert_eq!(types, vec![ffi::FF_TYPE_RED, ffi::FF_TYPE_GREEN, ffi::FF_TYPE_BLUE]);
         assert_eq!(host[5].name.to_str().unwrap(), "Tint G");
         assert_eq!(host[6].default, 0.3);

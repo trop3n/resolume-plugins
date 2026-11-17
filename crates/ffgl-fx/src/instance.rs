@@ -303,6 +303,7 @@ impl Instance {
                     Kind::Float { .. } => gl.uniform_1_f32(Some(loc), v[0]),
                     Kind::Int { .. } | Kind::Option { .. } | Kind::Bool { .. } => gl.uniform_1_i32(Some(loc), v[0] as i32),
                     Kind::Colour { .. } => gl.uniform_3_f32(Some(loc), v[0], v[1], v[2]),
+                    Kind::Point { .. } => gl.uniform_2_f32(Some(loc), v[0], v[1]),
                 }
             }
 

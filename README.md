@@ -27,6 +27,12 @@ Intel).
 | [Datamosh](plugins/datamosh/) | Effect | Fake codec datamosh: old frames smeared along the clip's block motion |
 | [Depth Map](plugins/depth-map/) | Effect | Fake depth camera for a fixed shot: learned background, people pushed near |
 | [Tracking](plugins/tracking/) | Effect | Surveillance tracking HUD that follows whatever is moving |
+| [Glass Prism](plugins/glass-prism/) | Effect | View the video through patterned glass (reeded, fluted, frosted, liquid, bubble, ripple, hammered, lenticular) |
+| [Blur Prism](plugins/blur-prism/) | Effect | Directional motion-style blur inside a box/ellipse area or a luma/alpha/color key |
+| [Ripple Prism](plugins/ripple-prism/) | Effect | Ripple distortion spreading from a movable center (circular, linear waves, droplet, standing wave) |
+| [Glow Prism](plugins/glow-prism/) | Effect | Bright parts of the video bloom into a soft glow |
+| [Fluid Prism](plugins/fluid-prism/) | Effect | Smoke-like fluid distortion that swirls the video out of an emitter, with chromatic dispersion (in the style of the Hiss effect from Control) |
+| [Data Prism](plugins/data-prism/) | Effect | FUI-style HUD overlay (brackets, lock frame, measure arcs, labels, circle chain, anchors) around a box you place on screen |
 
 ## Install
 
