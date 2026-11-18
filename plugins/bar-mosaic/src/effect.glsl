@@ -16,17 +16,28 @@
 // becomes one long streak instead of a run of reversed bars. The field is
 // stored minus a / barWidth so it stays small enough for 16-bit floats.
 // Each pixel finds its bar's two ends by stepping out and bisecting.
+//
+// Blocks: a block of Block Scale N is N bars merged along the row and N
+// rows tall, in the same warped coordinate (u / N), so it needs no extra
+// passes and lines up with the bars around it. A pixel uses the block when
+// the block's average luma is inside the Block Low..High band.
+//
+// Key: each bar (or block) is kept or dropped as a whole, by its average
+// luma against the Key Low..High band; dropped bars show Outside instead.
 
 #define BLUR_TAPS 12
 #define MAX_STEPS 48
 #define BISECT 7
 #define COLOUR_TAPS 8
 
-// Set in main() for the bar pass.
+// Set in main() for the bar pass; findBar() rescales them per layer.
 bool vert;
 vec2 AB;        // frame size along / across the bars
-float barW;
-float rowH;
+float baseW;    // bar width at scale 1, pixels
+float baseRowH; // row height at scale 1, pixels
+float curScale; // 1 for bars, Block Scale for blocks
+float barW;     // baseW * curScale
+float rowH;     // baseRowH * curScale
 float row;
 float phase;
 
@@ -48,10 +59,11 @@ float warpField(float a, float b, float L) {
     return (a - AB.x * 0.5) * lens * dot(n, n) / barW + lumaWarp * L;
 }
 
-// u along the current row, from the scanned field (pass 4).
+// u along the current row, from the scanned field, in units of the
+// current layer's bars (blocks divide the bar coordinate by their scale).
 float barU(float a) {
     vec2 p = clamp(toPx(a, rowCentre(a)) / RENDERSIZE, 0.0, 1.0);
-    return a / barW + texture(passIn, p).r + phase;
+    return (a / baseW + texture(passIn, p).r + phase) / curScale;
 }
 
 // End of the run of floor(u) == k from a, going in direction dir (-1 / +1).
@@ -91,6 +103,50 @@ float roundRect(vec2 p, vec2 halfSize, float r) {
     return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
 }
 
+// 1 inside lo..hi, eased over soft. An edge at 0 or 1 is open, so the
+// full range keeps pure black and pure white.
+float band(float x, float lo, float hi, float soft) {
+    float sf = max(soft, 1e-4);
+    float l = lo <= 0.0 ? 1.0 : smoothstep(lo - sf, lo + sf, x);
+    float h = hi >= 1.0 ? 1.0 : 1.0 - smoothstep(hi - sf, hi + sf, x);
+    return l * h;
+}
+
+struct Bar {
+    float x0;   // ends along the row, pixels
+    float x1;
+    float fy;   // 0..1 across the row
+    vec3 raw;   // the clip's average colour under the bar
+};
+
+// The bar (scale 1) or block (scale N) under position a, where bw is the
+// across-row coordinate with the row wave added. Leaves the globals set
+// for that layer, so shading uses the right row height.
+Bar findBar(float a, float bw, float scale) {
+    curScale = scale;
+    barW = baseW * scale;
+    rowH = baseRowH * scale;
+    row = floor(bw / rowH);
+    phase = TIME * scroll + rowJitter * hash12(vec2(row, 17.3 + scale)) * 4.0;
+
+    Bar r;
+    r.fy = bw / rowH - row;
+    float k = floor(barU(a));
+    r.x0 = barEnd(a, k, -1.0);
+    r.x1 = barEnd(a, k, 1.0);
+
+    // Average along the bar, two lines per row.
+    vec3 c = vec3(0.0);
+    for (int i = 0; i < COLOUR_TAPS; i++) {
+        float ai = mix(r.x0, r.x1, (float(i) + 0.5) / float(COLOUR_TAPS));
+        float bi = rowCentre(ai);
+        c += IMG_INPUT(clamp(toPx(ai, bi - rowH * 0.25) / RENDERSIZE, 0.0, 1.0)).rgb;
+        c += IMG_INPUT(clamp(toPx(ai, bi + rowH * 0.25) / RENDERSIZE, 0.0, 1.0)).rgb;
+    }
+    r.raw = c / float(2 * COLOUR_TAPS);
+    return r;
+}
+
 void main() {
     float blurPx = warpBlur * sizeScale();
 
@@ -124,8 +180,11 @@ void main() {
     float s = sizeScale();
     vert = orientation == 1;
     AB = vert ? RENDERSIZE.yx : RENDERSIZE;
-    barW = max(barWidth * s, 1.0);
-    rowH = max(rowHeight * s, 2.0);
+    baseW = max(barWidth * s, 1.0);
+    baseRowH = max(rowHeight * s, 2.0);
+    curScale = 1.0;
+    barW = baseW;
+    rowH = baseRowH;
     vec2 px = uv * RENDERSIZE;
     float a = vert ? px.y : px.x;
 
@@ -162,25 +221,23 @@ void main() {
 
     vec4 src = IMG_INPUT(uv);
     float g = gap * s;
-    float b = (vert ? px.x : px.y) + waveAt(a);
-    row = floor(b / rowH);
-    float fy = b / rowH - row;
-    phase = TIME * scroll + rowJitter * hash12(vec2(row, 17.3)) * 4.0;
+    float bw = (vert ? px.x : px.y) + waveAt(a);
 
-    float k = floor(barU(a));
-    float x0 = barEnd(a, k, -1.0);
-    float x1 = barEnd(a, k, 1.0);
-    float len = max(x1 - x0, 1.0);
-
-    // Bar colour: the clip's average along the bar, two lines per row.
-    vec3 c = vec3(0.0);
-    for (int i = 0; i < COLOUR_TAPS; i++) {
-        float ai = mix(x0, x1, (float(i) + 0.5) / float(COLOUR_TAPS));
-        float bi = rowCentre(ai);
-        c += IMG_INPUT(clamp(toPx(ai, bi - rowH * 0.25) / RENDERSIZE, 0.0, 1.0)).rgb;
-        c += IMG_INPUT(clamp(toPx(ai, bi + rowH * 0.25) / RENDERSIZE, 0.0, 1.0)).rgb;
+    // Block if this spot's block falls in the block band, else a bar.
+    Bar br;
+    bool isBlock = false;
+    if (blockScale > 1) {
+        br = findBar(a, bw, float(blockScale));
+        isBlock = band(luma(br.raw), blockLow, blockHigh, 0.0) > 0.5;
     }
-    c = pow(max(c / float(2 * COLOUR_TAPS), 0.0), vec3(gamma)) * tint;
+    if (!isBlock) {
+        br = findBar(a, bw, 1.0);
+    }
+    float x0 = br.x0;
+    float x1 = br.x1;
+    float fy = br.fy;
+    float len = max(x1 - x0, 1.0);
+    vec3 c = pow(max(br.raw, 0.0), vec3(gamma)) * tint;
 
     // Rounded bar with a gap all round.
     vec2 halfSize = max(vec2(len, rowH) * 0.5 - g * 0.5, vec2(0.5));
@@ -198,8 +255,19 @@ void main() {
     float peak = max(max(c.r, c.g), c.b);
     vec3 hue = peak > 1e-4 ? c / peak : tint;
     vec3 capCol = max(c * (1.0 + capGlow) + capGlow * 0.1, hue * capFloor);
-    vec3 col = mix(body, capCol, capM);
+    vec3 col = mix(gapColour, mix(body, capCol, capM), mask);
 
-    col = mix(gapColour, col, mask);
+    // Key: keep the whole bar or show Outside in its place.
+    float kv = band(luma(br.raw), keyLow, keyHigh, keySoftness);
+    if (keyInvert) {
+        kv = 1.0 - kv;
+    }
+    vec3 outside = src.rgb;
+    if (keyOutside == 1) {
+        outside = mix(gapColour, capCol, capM * mask);   // dashes only
+    } else if (keyOutside == 2) {
+        outside = gapColour;
+    }
+    col = mix(outside, col, kv);
     fragColor = vec4(mix(src.rgb, col, mixAmount), src.a);
 }
