@@ -33,6 +33,7 @@ Intel).
 | [Glow Prism](plugins/glow-prism/) | Effect | Bright parts of the video bloom into a soft glow |
 | [Fluid Prism](plugins/fluid-prism/) | Effect | Smoke-like fluid distortion that swirls the video out of an emitter, with chromatic dispersion (in the style of the Hiss effect from Control) |
 | [Data Prism](plugins/data-prism/) | Effect | FUI-style HUD overlay (brackets, lock frame, measure arcs, labels, circle chain, anchors) around a box you place on screen |
+| [Bar Mosaic](plugins/bar-mosaic/) | Effect | Rows of lit bars whose edges bend with the image, stretching into streaks |
 
 ## Install
 
