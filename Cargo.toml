@@ -4,6 +4,7 @@ resolver = "2"
 members = [
     "crates/ffgl-fx",
     "plugins/ascii",
+    "plugins/bar-mosaic",
     "plugins/blur-prism",
     "plugins/cctv",
     "plugins/data-prism",
