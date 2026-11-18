@@ -4,7 +4,9 @@
 // Pass 1: blur that down.
 // Pass 2: the warp field d = u - a / barWidth (see below).
 // Pass 3: running max of u along the bars, Streak Length doubling steps.
-// Pass 4: draw the bars.
+// Pass 4: slope-limited running min, so u never climbs faster than
+//         1 / (Min Bar * barWidth): no bar gets shorter than Min Bar.
+// Pass 5: draw the bars.
 //
 // Along each row, a bar is a run of pixels where floor(u) is the same, with
 //   u(a) = lens(a) / barWidth + lumaWarp * blurredLuma(a) + phase
@@ -141,6 +143,20 @@ void main() {
             m = max(m, IMG_PASS(uv - toPx(st, 0.0) / RENDERSIZE).r - st / barW);
         }
         fragColor = vec4(m, 0.0, 0.0, 1.0);
+        return;
+    }
+    if (PASSINDEX == 4) {
+        // w(a) = min(w(a), w(a - st) + st * (1 / minBar - 1) / barW): the
+        // largest u below the field whose slope stays under 1 / (minBar *
+        // barW). Without it, steep brightness climbs squeeze bars into
+        // slivers that flicker.
+        float st = max(1.0, floor(exp2(float(ITERATION)) * s));
+        float w = IMG_PASS(uv).r;
+        if (minBar > 0.0 && a - st >= 0.0) {
+            float rise = st * (1.0 / minBar - 1.0) / barW;
+            w = min(w, IMG_PASS(uv - toPx(st, 0.0) / RENDERSIZE).r + rise);
+        }
+        fragColor = vec4(w, 0.0, 0.0, 1.0);
         return;
     }
 

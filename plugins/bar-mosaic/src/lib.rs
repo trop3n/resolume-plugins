@@ -7,7 +7,8 @@
 //!
 //! Passes: blur the luma across, blur it down, build the warp field, take a
 //! running max of it along the bars (Streak Length doubling steps, so folds
-//! in the warp become streaks), then draw the bars.
+//! in the warp become streaks), cap how fast it climbs (Min Bar, so steep
+//! brightness doesn't squeeze bars into flickering slivers), then draw.
 
 use ffgl_fx::{Cache, EffectDef, Param, Pass};
 
@@ -32,9 +33,10 @@ pub static EFFECT: EffectDef = EffectDef {
             &["Horizontal", "Vertical"],
             0,
         ),
-        Param::float("Luma Warp", "lumaWarp", "Warp", -60.0, 60.0, 12.0),
+        Param::float("Luma Warp", "lumaWarp", "Warp", -60.0, 60.0, 20.0),
         Param::float("Warp Blur", "warpBlur", "Warp", 0.0, 80.0, 14.0),
         Param::int("Streak Length", "streakSteps", "Warp", 0, 10, 8),
+        Param::float("Min Bar", "minBar", "Warp", 0.0, 1.0, 0.4),
         Param::float("Lens", "lens", "Warp", -1.0, 1.0, 0.0),
         Param::float("Row Wave", "rowWave", "Warp", 0.0, 40.0, 0.0),
         Param::float("Wave Freq", "waveFreq", "Warp", 0.0, 20.0, 3.0),
@@ -53,6 +55,7 @@ pub static EFFECT: EffectDef = EffectDef {
         Pass::new(SHADER),
         Pass::new(SHADER),
         Pass::new(SHADER),
+        Pass::repeated(SHADER, "streakSteps"),
         Pass::repeated(SHADER, "streakSteps"),
         Pass::new(SHADER),
     ],
